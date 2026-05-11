@@ -1,0 +1,152 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --void: #020203;
+    --accent-indigo: #6366f1;
+    --accent-violet: #8b5cf6;
+    --accent-cyan: #22d3ee;
+    --glass-border: rgba(99, 128, 255, 0.15);
+    --glass-bg: rgba(10, 10, 15, 0.7);
+  }
+
+  * { 
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-void text-slate-300 font-body overflow-x-hidden;
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+
+  /* Animated Glow Orbs */
+  body::before, body::after {
+    content: '';
+    position: fixed;
+    width: 50vw;
+    height: 50vw;
+    border-radius: 50%;
+    filter: blur(80px);
+    z-index: -1;
+    opacity: 0.15;
+    pointer-events: none;
+    animation: orbFloat 20s infinite alternate;
+  }
+
+  body::before {
+    top: -10%;
+    left: -10%;
+    background: var(--accent-indigo);
+  }
+
+  body::after {
+    bottom: -10%;
+    right: -10%;
+    background: var(--accent-violet);
+    animation-delay: -10s;
+  }
+
+  @keyframes orbFloat {
+    from { transform: translate(0, 0) scale(1); }
+    to { transform: translate(10%, 10%) scale(1.1); }
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display text-white tracking-tight;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--void); }
+  ::-webkit-scrollbar-thumb { 
+    background: rgba(99, 102, 241, 0.3); 
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent-indigo); }
+}
+
+@layer components {
+  .glass-card {
+    @apply relative overflow-hidden rounded-2xl p-6 transition-all duration-500;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+
+  /* Top-edge light streak */
+  .glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    pointer-events: none;
+  }
+
+  .glass-card:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .card { @apply glass-card; }
+
+  .btn-primary {
+    @apply relative overflow-hidden px-6 py-3 rounded-xl font-display font-bold text-white
+           transition-all duration-300 active:scale-95 disabled:opacity-50;
+    background: linear-gradient(135deg, var(--accent-indigo), var(--accent-violet));
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.5);
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 rounded-xl font-display font-bold text-slate-200 border
+           bg-white/5 backdrop-blur-sm transition-all duration-300;
+    border-color: var(--glass-border);
+  }
+
+  .btn-secondary:hover {
+    @apply border-indigo-500/50 bg-white/10 text-white;
+  }
+
+  .input {
+    @apply w-full bg-black/40 border rounded-xl px-5 py-3
+           text-white placeholder-slate-600 font-body outline-none
+           transition-all duration-300 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20;
+    border-color: var(--glass-border);
+  }
+
+  .value-mono {
+    @apply font-mono text-cyan-400 font-bold;
+  }
+
+  .score-display {
+    @apply font-mono text-white tracking-tighter;
+  }
+}
+
+/* CP Rank Enhancements */
+.rank-newbie       { @apply text-slate-500; }
+.rank-pupil        { @apply text-emerald-400; }
+.rank-specialist   { @apply text-cyan-400; }
+.rank-expert       { @apply text-indigo-400; }
+.rank-candidate    { @apply text-violet-400; }
+.rank-master       { @apply text-amber-400; }
+.rank-grandmaster  { @apply text-rose-500; }
+.rank-legendary {
+  @apply text-rose-600 font-bold;
+  filter: drop-shadow(0 0 8px rgba(225, 29, 72, 0.5));
+}
