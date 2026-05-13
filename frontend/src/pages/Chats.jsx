@@ -2,16 +2,15 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
+import { io } from 'socket.io-client'
 
 /* ── helpers ── */
 
-// Python datetime.isoformat() has no 'Z' — append it so JS parses as UTC
 function parseUTC(iso) {
   if (!iso) return new Date(NaN)
   return new Date(iso.endsWith('Z') ? iso : iso + 'Z')
 }
 
-// Conversation list: relative time
 function timeAgo(iso) {
   if (!iso) return ''
   const d    = parseUTC(iso)
@@ -23,7 +22,6 @@ function timeAgo(iso) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-// Message thread: show actual clock time (today) or date+time (older)
 function formatMsgTime(iso) {
   if (!iso) return ''
   const d    = parseUTC(iso)
@@ -33,10 +31,11 @@ function formatMsgTime(iso) {
   if (diff < 604800) return `${d.toLocaleDateString('en-IN', { weekday: 'short' })} ${hm}`
   return `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ${hm}`
 }
-function Avatar({ name = '', size = 8 }) {
+
+function Avatar({ name = '', size = 10 }) {
   return (
-    <div className={`w-${size} h-${size} rounded-full bg-accent-indigo/20 border border-accent-indigo/30 flex items-center justify-center shrink-0`}>
-      <span className="text-accent-indigo font-bold text-xs">{name?.[0]?.toUpperCase()}</span>
+    <div className={`w-${size} h-${size} rounded-full bg-gray-100 border border-border-dim flex items-center justify-center shrink-0`}>
+      <span className="text-primary font-bold text-sm">{name?.[0]?.toUpperCase()}</span>
     </div>
   )
 }
@@ -54,8 +53,13 @@ export default function Chats() {
   const [loadingConvs, setLoadingConvs]   = useState(true)
   const [loadingMsgs, setLoadingMsgs]     = useState(false)
   const [unread, setUnread]               = useState(0)
-  const [msgMenuId, setMsgMenuId]         = useState(null)  // hovered msg id for delete
-  const [convMenu, setConvMenu]           = useState(false) // header 3-dot dropdown
+  const [convMenu, setConvMenu]           = useState(false)
+
+  // Selection & Forwarding
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds]     = useState([])
+  const [showForwardPicker, setShowForwardPicker] = useState(false)
+  const [forwardMsgId, setForwardMsgId]   = useState(null)
 
   // Search / new chat panel
   const [showSearch, setShowSearch]       = useState(false)
@@ -70,8 +74,98 @@ export default function Chats() {
   const [selectedMembers, setSelectedMembers] = useState([])
 
   const bottomRef  = useRef(null)
-  const pollRef    = useRef(null)
   const inputRef   = useRef(null)
+  const socketRef  = useRef(null)
+
+  /* ── socket setup ── */
+  useEffect(() => {
+    if (!user) return
+    
+    // Connect to socket
+    const socket = io('/', { path: '/socket.io' })
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      // Join personal room for unread updates and self-only deletions
+      socket.emit('join', { room: `user_${user.id}` })
+    })
+
+    socket.on('new_message', (data) => {
+      // If message is for the active conversation, add to list
+      if (activeConv && data.conversation_id === activeConv.id) {
+        setMessages(prev => {
+            // Avoid duplicates
+            if (prev.find(m => m.messageId === data.message.messageId)) return prev
+            return [...prev, data.message]
+        })
+        api.post(`/chats/${data.conversation_id}/read`).catch(() => {})
+      }
+      
+      // Update conversation preview in the list
+      setConversations(prev => {
+        const idx = prev.findIndex(c => c.id === data.conversation_id)
+        if (idx === -1) {
+            // Might be a new conversation started by someone else, reload
+            loadConversations()
+            return prev
+        }
+        const updated = [...prev]
+        updated[idx] = {
+          ...updated[idx],
+          last_message: data.message.text,
+          last_sender: data.message.senderName,
+          updated_at: data.message.timestamp,
+          unread_count: (activeConv?.id === data.conversation_id) ? 0 : updated[idx].unread_count + 1
+        }
+        // Move to top
+        return [updated[idx], ...updated.filter((_, i) => i !== idx)]
+      })
+    })
+
+    socket.on('message_deleted', (data) => {
+      setMessages(prev => prev.map(m => {
+        if (m.messageId === data.message_id) {
+          if (data.mode === 'everyone') {
+            return { ...m, isDeletedForEveryone: true, text: 'This message was deleted' }
+          } else {
+            // If it was 'delete for me', it should have been filtered out by the backend on reload,
+            // but for instant feedback we filter it here.
+            return null
+          }
+        }
+        return m
+      }).filter(Boolean))
+    })
+
+    socket.on('unread_update', (data) => {
+        setConversations(prev => prev.map(c => 
+            c.id === data.conversation_id ? { ...c, unread_count: data.unread_count } : c
+        ))
+        // Update total unread
+        api.get('/chats/unread').then(r => setUnread(r.data.unread || 0)).catch(() => {})
+    })
+
+    socket.on('messages_read', (data) => {
+        if (activeConv?.id === data.conversation_id) {
+            setMessages(prev => prev.map(m => 
+                m.senderId !== data.user_id ? { ...m, status: 'seen' } : m
+            ))
+        }
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [user, activeConv?.id])
+
+  /* ── join/leave conversation rooms ── */
+  useEffect(() => {
+    if (!activeConv || !socketRef.current) return
+    socketRef.current.emit('join', { room: activeConv.id })
+    return () => {
+        if (socketRef.current) socketRef.current.emit('leave', { room: activeConv.id })
+    }
+  }, [activeConv?.id])
 
   /* ── load conversations ── */
   const loadConversations = useCallback(() => {
@@ -103,25 +197,14 @@ export default function Chats() {
     setConversations(prev =>
       prev.map(c => c.id === activeConv.id ? { ...c, unread_count: 0 } : c)
     )
+    setSelectionMode(false)
+    setSelectedIds([])
   }, [activeConv?.id])
 
   /* ── scroll to bottom on new messages ── */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  /* ── polling every 4s ── */
-  useEffect(() => {
-    pollRef.current = setInterval(() => {
-      loadConversations()
-      if (activeConv) {
-        api.get(`/chats/${activeConv.id}/messages`)
-          .then(r => setMessages(r.data.messages || []))
-          .catch(() => {})
-      }
-    }, 4000)
-    return () => clearInterval(pollRef.current)
-  }, [activeConv, loadConversations])
 
   /* ── send message ── */
   const sendMessage = async (e) => {
@@ -131,9 +214,8 @@ export default function Chats() {
     setSending(true)
     try {
       const r = await api.post(`/chats/${activeConv.id}/messages`, { content })
-      setMessages(prev => [...prev, r.data.message])
+      // We don't add to messages state here, we wait for the socket event for consistency
       setMsgInput('')
-      loadConversations()
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to send message')
     } finally {
@@ -143,17 +225,41 @@ export default function Chats() {
   }
 
   /* ── delete message ── */
-  const deleteMessage = async (msgId) => {
-    if (!window.confirm('Delete this message?')) return
+  const deleteMessage = async (msgId, mode = 'me') => {
+    const label = mode === 'everyone' ? 'Delete for everyone?' : 'Delete for me?'
+    if (!window.confirm(label)) return
     try {
-      await api.delete(`/chats/${activeConv.id}/messages/${msgId}`)
-      setMessages(prev => prev.map(m =>
-        m.id === msgId ? { ...m, is_deleted: true, content: '[deleted]' } : m
-      ))
+      await api.delete(`/chats/${activeConv.id}/messages/${msgId}?mode=${mode}`)
+      // State updated via socket
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to delete message')
-    } finally {
-      setMsgMenuId(null)
+    }
+  }
+
+  const deleteSelected = async () => {
+      if (!window.confirm(`Delete ${selectedIds.length} messages for me?`)) return
+      for (const id of selectedIds) {
+          await api.delete(`/chats/${activeConv.id}/messages/${id}?mode=me`).catch(() => {})
+      }
+      setSelectionMode(false)
+      setSelectedIds([])
+  }
+
+  /* ── forward message ── */
+  const openForwardPicker = (msgId) => {
+    setForwardMsgId(msgId)
+    setShowForwardPicker(true)
+  }
+
+  const forwardMessage = async (targetChatId) => {
+    if (!forwardMsgId) return
+    try {
+        await api.post(`/chats/messages/${forwardMsgId}/forward`, { target_chat_id: targetChatId })
+        setShowForwardPicker(false)
+        setForwardMsgId(null)
+        alert('Message forwarded!')
+    } catch (err) {
+        alert(err.response?.data?.error || 'Failed to forward')
     }
   }
 
@@ -182,7 +288,6 @@ export default function Chats() {
     try {
       await api.post(`/chats/block/${other.user_id}`)
       alert(`${other.name} blocked.`)
-      // Refresh conv list and clear active
       setConversations(prev => prev.filter(c => c.id !== activeConv.id))
       setActiveConv(null)
     } catch (err) {
@@ -190,14 +295,6 @@ export default function Chats() {
     } finally {
       setConvMenu(false)
     }
-  }
-
-  /* ── report conversation ── */
-  const handleReport = async () => {
-    const reason = window.prompt('Reason for reporting this conversation:')
-    if (!reason) return
-    alert('Thank you. The conversation has been reported for moderation.')
-    setConvMenu(false)
   }
 
   const startDM = async (targetId) => {
@@ -261,73 +358,76 @@ export default function Chats() {
 
   /* ── message status icon ── */
   const StatusIcon = ({ status }) => {
-    if (status === 'seen')      return <span className="text-brand-400 text-xs">✓✓</span>
-    if (status === 'delivered') return <span className="text-slate-400 text-xs">✓✓</span>
-    return <span className="text-slate-600 text-xs">✓</span>
+    if (status === 'seen')      return <span className="text-white opacity-80 text-[10px]">✓✓</span>
+    if (status === 'delivered') return <span className="text-white opacity-50 text-[10px]">✓✓</span>
+    return <span className="text-white opacity-30 text-[10px]">✓</span>
+  }
+
+  const toggleSelection = (id) => {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] -mt-8 -mx-6 overflow-hidden rounded-xl border border-glass-border shadow-2xl">
+    <div className="flex h-[calc(100vh-8rem)] -mt-10 -mx-10 overflow-hidden bg-white border border-border-dim shadow-card rounded-2xl">
 
       {/* ══ LEFT: Conversation list ══ */}
-      <aside className="w-80 bg-void/50 backdrop-blur-xl border-r border-glass-border flex flex-col shrink-0">
+      <aside className="w-[320px] bg-white border-r border-border-dim flex flex-col shrink-0">
         {/* Header */}
-        <div className="px-4 py-4 border-b border-dark-600">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="font-display font-bold text-white text-lg flex items-center gap-2">
+        <div className="px-6 py-6 border-b border-border-dim">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold text-text-primary flex items-center gap-3">
               Chats
               {unread > 0 && (
-                <span className="bg-accent-indigo text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-indigo-500/30">
+                <span className="bg-primary text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
             </h1>
-            <div className="flex gap-1.5">
+            <div className="flex gap-2">
               <button
                 onClick={() => { setShowSearch(s => !s); setShowGroupModal(false) }}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-accent-indigo/20 hover:text-accent-indigo text-slate-400 border border-glass-border transition-all flex items-center justify-center"
+                className="w-9 h-9 rounded-lg bg-primary text-white hover:brightness-125 transition-all flex items-center justify-center"
                 title="New chat"
               >
-                <EditIcon size={15} />
+                <EditIcon size={16} />
               </button>
               <button
                 onClick={() => { setShowGroupModal(s => !s); setShowSearch(false) }}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-accent-indigo/20 hover:text-accent-indigo text-slate-400 border border-glass-border transition-all flex items-center justify-center"
+                className="w-9 h-9 rounded-lg bg-text-primary text-white hover:brightness-125 transition-all flex items-center justify-center"
                 title="New group"
               >
-                <UsersIcon size={15} />
+                <UsersIcon size={16} />
               </button>
             </div>
           </div>
 
           {/* User search panel */}
           {showSearch && (
-            <div className="space-y-2">
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
               <input
-                className="input text-xs py-2"
+                className="input py-2 text-sm"
                 placeholder="Search by name or email…"
                 value={searchQ}
                 onChange={e => setSearchQ(e.target.value)}
                 autoFocus
               />
-              <div className="max-h-48 overflow-y-auto space-y-1">
-                {searching && <p className="text-xs text-slate-500 px-1">Searching…</p>}
+              <div className="max-h-60 overflow-y-auto space-y-1 bg-gray-50 rounded-xl border border-border-dim p-1">
+                {searching && <p className="text-xs text-text-secondary p-2 font-medium">Searching…</p>}
                 {searchResults.map(u => (
                   <button
                     key={u.user_id}
                     onClick={() => startDM(u.user_id)}
-                    className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-dark-600 transition-colors text-left"
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white transition-colors text-left border border-transparent hover:border-border-dim"
                   >
-                    <Avatar name={u.name} size={7} />
+                    <Avatar name={u.name} size={8} />
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{u.name}</p>
-                      <p className="text-xs text-slate-500">{u.branch} · Y{u.year}</p>
+                      <p className="text-[13px] font-bold text-text-primary truncate">{u.name}</p>
+                      <p className="text-[11px] text-text-secondary font-medium">{u.branch} · Y{u.year}</p>
                     </div>
-                    <span className="ml-auto text-brand-400 text-xs shrink-0">Chat →</span>
                   </button>
                 ))}
                 {!searching && searchQ && searchResults.length === 0 && (
-                  <p className="text-xs text-slate-500 px-1">No users found</p>
+                  <p className="text-xs text-text-secondary p-2 font-medium">No users found</p>
                 )}
               </div>
             </div>
@@ -335,49 +435,49 @@ export default function Chats() {
         </div>
 
         {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto divide-y divide-dashed divide-border-dim">
           {loadingConvs ? (
-            <div className="flex justify-center py-8">
-              <Spinner />
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
             </div>
           ) : conversations.length === 0 ? (
-            <div className="px-4 py-8 text-center">
-              <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mx-auto mb-3">
-                <ChatIcon size={20} className="text-slate-600" />
+            <div className="px-10 py-16 text-center">
+              <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mx-auto mb-4 border border-border-dim">
+                <ChatIcon size={24} className="text-gray-300" />
               </div>
-              <p className="text-slate-500 text-sm">No conversations yet</p>
-              <p className="text-slate-600 text-xs mt-1">Click ✏ to start one</p>
+              <p className="text-text-secondary font-bold text-[15px]">No conversations yet</p>
+              <p className="text-text-secondary text-xs mt-2 font-medium">Click ✏ to start a new chat</p>
             </div>
           ) : (
             conversations.map(conv => (
               <button
                 key={conv.id}
                 onClick={() => setActiveConv(conv)}
-                className={`w-full flex items-center gap-3 px-4 py-3 border-b border-white/5 hover:bg-white/5 transition-all text-left ${
-                  activeConv?.id === conv.id ? 'bg-accent-indigo/10 border-l-2 border-l-accent-indigo' : ''
+                className={`w-full flex items-center gap-4 px-6 py-5 hover:bg-accent-pill transition-all text-left ${
+                  activeConv?.id === conv.id ? 'bg-accent-pill relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary' : ''
                 }`}
               >
                 {conv.kind === 'group' ? (
-                  <div className="w-9 h-9 rounded-full bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center shrink-0">
-                    <UsersIcon size={14} className="text-indigo-400" />
+                  <div className="w-11 h-11 rounded-full bg-gray-100 border border-border-dim flex items-center justify-center shrink-0">
+                    <UsersIcon size={18} className="text-primary" />
                   </div>
                 ) : (
-                  <Avatar name={convName(conv)} size={9} />
+                  <Avatar name={convName(conv)} size={11} />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="font-display font-semibold text-sm text-white truncate">{convName(conv)}</p>
-                    <span className="text-xs text-slate-600 shrink-0 ml-1">{timeAgo(conv.updated_at)}</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[14px] font-bold text-text-primary truncate">{convName(conv)}</p>
+                    <span className="text-[11px] font-bold text-text-secondary shrink-0 ml-2">{timeAgo(conv.updated_at)}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-slate-500 truncate">
+                    <p className="text-[13px] text-text-secondary truncate font-medium">
                       {conv.last_message
                         ? (conv.last_sender ? `${conv.last_sender}: ` : '') + conv.last_message
                         : convSub(conv)
                       }
                     </p>
                     {conv.unread_count > 0 && (
-                      <span className="bg-accent-indigo text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ml-1 shadow-lg shadow-indigo-500/20">
+                      <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ml-2">
                         {conv.unread_count}
                       </span>
                     )}
@@ -390,142 +490,175 @@ export default function Chats() {
       </aside>
 
       {/* ══ RIGHT: Message thread ══ */}
-      <main className="flex-1 flex flex-col bg-void/30 backdrop-blur-sm min-w-0">
+      <main className="flex-1 flex flex-col bg-page min-w-0 relative">
         {!activeConv ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-            <div className="w-20 h-20 rounded-2xl bg-dark-800 border border-dark-600 flex items-center justify-center mb-4">
-              <ChatIcon size={36} className="text-brand-500/50" />
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-10">
+            <div className="w-24 h-24 rounded-3xl bg-white border border-border-dim flex items-center justify-center mb-6 shadow-card">
+              <ChatIcon size={40} className="text-primary" strokeWidth={1.5} />
             </div>
-            <h2 className="font-display font-bold text-white text-xl mb-2">Your Messages</h2>
-            <p className="text-slate-500 text-sm max-w-xs">
-              Select a conversation to read messages or click the <strong className="text-slate-300">✏</strong> icon to start a new chat.
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Your Messages</h2>
+            <p className="text-text-secondary text-[15px] font-medium max-w-xs leading-relaxed">
+              Select a conversation from the left or click the <strong className="text-primary font-bold">✏</strong> button to start messaging.
             </p>
           </div>
         ) : (
           <>
             {/* Thread header */}
-            <div className="px-5 py-3.5 border-b border-glass-border bg-white/5 flex items-center gap-3">
+            <div className="px-8 py-4 border-b border-border-dim bg-white flex items-center gap-4">
               {activeConv.kind === 'group' ? (
-                <div className="w-9 h-9 rounded-full bg-accent-violet/20 border border-accent-violet/30 flex items-center justify-center">
-                  <UsersIcon size={15} className="text-accent-violet" />
+                <div className="w-10 h-10 rounded-full bg-gray-50 border border-border-dim flex items-center justify-center">
+                  <UsersIcon size={18} className="text-primary" />
                 </div>
               ) : (
-                <Avatar name={convName(activeConv)} size={9} />
+                <Avatar name={convName(activeConv)} size={10} />
               )}
-              <div>
-                <p className="font-display font-semibold text-white leading-none">{convName(activeConv)}</p>
-                <p className="text-[10px] text-slate-500 mt-1">{convSub(activeConv)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-text-primary leading-none truncate">{convName(activeConv)}</p>
+                <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider mt-1.5">{convSub(activeConv)}</p>
               </div>
-              {activeConv.kind === 'group' && (
-                <div className="flex -space-x-1">
-                  {activeConv.members?.slice(0, 5).map(m => (
-                    <div key={m.user_id} title={m.name}
-                      className="w-6 h-6 rounded-full bg-brand-500/20 border border-dark-800 flex items-center justify-center text-[9px] font-bold text-brand-400">
-                      {m.name?.[0]}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* 3-dot menu */}
-              <div className="ml-auto relative">
-                <button
-                  onClick={() => setConvMenu(v => !v)}
-                  className="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-dark-600 flex items-center justify-center transition-colors"
-                  title="Options"
+              
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => { setSelectionMode(!selectionMode); setSelectedIds([]) }}
+                  className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                    selectionMode ? 'bg-primary text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
                 >
-                  <DotsIcon size={16} />
+                  {selectionMode ? 'CANCEL' : 'SELECT'}
                 </button>
-                {convMenu && (
-                  <div className="absolute right-0 top-10 bg-dark-800 border border-glass-border rounded-xl shadow-2xl z-50 overflow-hidden min-w-[160px] animate-in fade-in slide-in-from-top-2 duration-200">
+
+                <div className="relative">
                     <button
-                      onClick={deleteConversation}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-rose-400 hover:bg-rose-500/10 transition-colors text-left"
+                      onClick={() => setConvMenu(v => !v)}
+                      className="w-10 h-10 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center transition-colors"
                     >
-                      <TrashIcon size={14} />
-                      {activeConv.kind === 'group' ? 'Leave Group' : 'Delete Chat'}
+                      <DotsIcon size={18} />
                     </button>
-                    {activeConv.kind === 'dm' && (
-                      <button
-                        onClick={handleBlock}
-                        className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 transition-colors text-left"
-                      >
-                        <SlashIcon size={14} />
-                        Block User
-                      </button>
+                    {convMenu && (
+                    <div className="absolute right-0 top-12 bg-white border border-border-dim rounded-xl shadow-card z-50 overflow-hidden min-w-[180px] animate-in fade-in slide-in-from-top-2 duration-200">
+                        <button
+                          onClick={deleteConversation}
+                          className="w-full flex items-center gap-3 px-4 py-3.5 text-[13px] font-bold text-danger hover:bg-danger/5 transition-colors text-left"
+                        >
+                          <TrashIcon size={14} />
+                          {activeConv.kind === 'group' ? 'Leave Group' : 'Delete Chat'}
+                        </button>
+                        {activeConv.kind === 'dm' && (
+                        <button
+                            onClick={handleBlock}
+                            className="w-full flex items-center gap-3 px-4 py-3.5 text-[13px] font-bold text-gray-600 hover:bg-gray-50 transition-colors text-left"
+                        >
+                            <SlashIcon size={14} />
+                            Block User
+                        </button>
+                        )}
+                    </div>
                     )}
-                    <button
-                      onClick={handleReport}
-                      className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-300 hover:bg-white/5 transition-colors text-left border-t border-glass-border"
-                    >
-                      <AlertIcon size={14} />
-                      Report
-                    </button>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
 
+            {/* Selection Toolbar */}
+            {selectionMode && selectedIds.length > 0 && (
+                <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-text-primary px-6 py-3 rounded-full shadow-2xl flex items-center gap-8 z-40 animate-in slide-in-from-top-4 duration-300">
+                    <span className="text-white text-xs font-bold uppercase tracking-widest">{selectedIds.length} SELECTED</span>
+                    <div className="flex items-center gap-5">
+                        <button onClick={deleteSelected} className="text-white/70 hover:text-white transition-colors" title="Delete selected">
+                            <TrashIcon size={16} />
+                        </button>
+                        <button onClick={() => alert('Forwarding multiple messages is coming soon!')} className="text-white/70 hover:text-white transition-colors" title="Forward selected">
+                            <ShareIcon size={16} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-3"
-              style={{ backgroundImage: 'radial-gradient(ellipse at 50% 0%, rgba(37,162,98,0.04) 0%, transparent 70%)' }}>
+            <div className="flex-1 overflow-y-auto px-8 py-8 space-y-4">
               {loadingMsgs ? (
-                <div className="flex justify-center py-12"><Spinner /></div>
+                <div className="flex justify-center py-24">
+                  <div className="w-10 h-10 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
+                </div>
               ) : messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full py-20 gap-3">
-                  <div className="w-14 h-14 rounded-2xl bg-dark-700 border border-dark-600 flex items-center justify-center">
-                    <ChatIcon size={24} className="text-slate-600" />
+                <div className="flex flex-col items-center justify-center h-full gap-4">
+                  <div className="w-16 h-16 rounded-3xl bg-white border border-border-dim flex items-center justify-center">
+                    <ChatIcon size={24} className="text-gray-200" />
                   </div>
-                  <p className="text-slate-500 text-sm">No messages yet — say hello! 👋</p>
+                  <p className="text-text-secondary font-bold text-[15px]">No messages yet — say hello! 👋</p>
                 </div>
               ) : (
                 messages.map((msg, i) => {
-                  const isMe = msg.sender_id === user?.id
-                  // Show date divider when day changes
+                  const isMe = msg.senderId === user?.id
                   const prevMsg   = messages[i - 1]
-                  const thisDay   = parseUTC(msg.created_at).toDateString()
-                  const prevDay   = prevMsg ? parseUTC(prevMsg.created_at).toDateString() : null
+                  const thisDay   = parseUTC(msg.timestamp).toDateString()
+                  const prevDay   = prevMsg ? parseUTC(prevMsg.timestamp).toDateString() : null
                   const showDivider = thisDay !== prevDay
                   const todayStr  = new Date().toDateString()
-                  const dividerLabel = thisDay === todayStr ? 'Today'
-                    : parseUTC(msg.created_at).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })
+                  const dividerLabel = thisDay === todayStr ? 'TODAY'
+                    : parseUTC(msg.timestamp).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }).toUpperCase()
+                  
+                  const isSelected = selectedIds.includes(msg.messageId)
+
                   return (
-                    <div key={msg.id}>
+                    <div key={msg.messageId}>
                       {showDivider && (
-                        <div className="flex items-center gap-3 my-4">
-                          <div className="flex-1 h-px bg-dark-700" />
-                          <span className="text-[10px] text-slate-600 font-medium px-2">{dividerLabel}</span>
-                          <div className="flex-1 h-px bg-dark-700" />
+                        <div className="flex items-center gap-4 my-8">
+                          <div className="flex-1 h-px bg-border-dim" />
+                          <span className="text-[10px] text-text-secondary font-extrabold tracking-widest px-2">{dividerLabel}</span>
+                          <div className="flex-1 h-px bg-border-dim" />
                         </div>
                       )}
-                      <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end gap-2`}>
-                        {!isMe && <Avatar name={msg.sender_name} size={7} />}
-                        <div className="max-w-[68%] group">
+                      <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end gap-3 group`}>
+                        {selectionMode && (
+                            <input 
+                                type="checkbox" 
+                                checked={isSelected} 
+                                onChange={() => toggleSelection(msg.messageId)}
+                                className="mb-4 accent-primary w-4 h-4 rounded-full border-border-dim cursor-pointer"
+                            />
+                        )}
+
+                        {!isMe && <Avatar name={msg.senderName} size={8} />}
+                        <div className={`max-w-[75%] ${isMe ? 'flex flex-col items-end' : ''}`}>
                           {!isMe && (
-                            <p className="text-[11px] text-slate-500 mb-1 ml-1 font-medium">{msg.sender_name}</p>
+                            <p className="text-[11px] text-text-secondary mb-1.5 ml-1 font-bold uppercase tracking-wider">{msg.senderName}</p>
                           )}
-                          <div className="flex items-end gap-1.5">
-                            {/* Delete button — only own messages, shows on hover */}
-                            {isMe && !msg.is_deleted && (
-                              <button
-                                onClick={() => deleteMessage(msg.id)}
-                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-400/10 shrink-0"
-                                title="Delete message"
-                              >
-                                <TrashIcon size={12} />
-                              </button>
+                          
+                          <div className="flex items-end gap-2 relative group/msg">
+                            {/* Message actions */}
+                            {!selectionMode && !msg.isDeletedForEveryone && (
+                                <div className={`absolute bottom-full ${isMe ? 'right-0' : 'left-0'} mb-2 flex gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity bg-white/90 backdrop-blur rounded-lg border border-border-dim shadow-card p-1 z-10`}>
+                                    <button onClick={() => openForwardPicker(msg.messageId)} className="p-1.5 hover:bg-gray-100 rounded text-text-secondary hover:text-primary transition-colors" title="Forward">
+                                        <ShareIcon size={13} />
+                                    </button>
+                                    <button onClick={() => deleteMessage(msg.messageId, 'me')} className="p-1.5 hover:bg-gray-100 rounded text-text-secondary hover:text-danger transition-colors" title="Delete for Me">
+                                        <TrashIcon size={13} />
+                                    </button>
+                                    {isMe && (
+                                        <button onClick={() => deleteMessage(msg.messageId, 'everyone')} className="p-1.5 hover:bg-gray-100 rounded text-danger font-extrabold text-[9px] px-2 tracking-tighter" title="Delete for Everyone">
+                                            EVERYONE
+                                        </button>
+                                    )}
+                                </div>
                             )}
-                            <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words shadow-xl ${
+
+                            <div className={`px-5 py-3.5 rounded-2xl text-[14px] leading-relaxed break-words shadow-sm relative ${
                               isMe
-                                ? 'bg-gradient-to-br from-accent-indigo to-accent-violet text-white rounded-br-none shadow-indigo-500/20'
-                                : 'bg-white/10 backdrop-blur-md text-slate-100 rounded-bl-none border border-glass-border'
-                            } ${msg.is_deleted ? 'opacity-40 italic text-xs' : ''}`}>
-                              {msg.content}
+                                ? 'bg-primary text-white rounded-br-none'
+                                : 'bg-white text-text-primary rounded-bl-none border border-border-dim'
+                            } ${msg.isDeletedForEveryone ? 'opacity-50 italic text-[13px] bg-gray-50 border-dashed' : ''}`}>
+                              {msg.forwarded && (
+                                  <div className="flex items-center gap-1 text-[10px] opacity-70 mb-1.5 font-bold italic tracking-wider">
+                                      <ShareIcon size={11} /> FORWARDED
+                                  </div>
+                              )}
+                              {msg.text}
                             </div>
                           </div>
-                          <div className={`flex items-center gap-1.5 mt-1 px-1 ${
+                          <div className={`flex items-center gap-2 mt-1.5 px-1 ${
                             isMe ? 'justify-end' : 'justify-start'
                           }`}>
-                            <span className="text-[10px] text-slate-600">{formatMsgTime(msg.created_at)}</span>
+                            <span className="text-[10px] text-text-secondary font-bold">{formatMsgTime(msg.timestamp)}</span>
                             {isMe && <StatusIcon status={msg.status} />}
                           </div>
                         </div>
@@ -538,11 +671,11 @@ export default function Chats() {
             </div>
 
             {/* Input bar */}
-            <form onSubmit={sendMessage} className="px-4 py-3 border-t border-glass-border bg-white/5 flex items-center gap-3">
+            <form onSubmit={sendMessage} className="px-6 py-5 border-t border-border-dim bg-white flex items-center gap-4">
               <input
                 ref={inputRef}
-                className="flex-1 bg-black/40 border border-glass-border rounded-full px-5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-accent-indigo focus:ring-1 focus:ring-accent-indigo/20 transition-all"
-                placeholder="Type a message…"
+                className="flex-1 bg-gray-50 border border-border-dim rounded-xl px-6 py-3.5 text-sm text-text-primary placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all font-medium"
+                placeholder="Write your message here…"
                 value={msgInput}
                 onChange={e => setMsgInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(e)}
@@ -551,65 +684,99 @@ export default function Chats() {
               <button
                 type="submit"
                 disabled={!msgInput.trim() || sending}
-                className="w-10 h-10 rounded-full bg-accent-indigo hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center active:scale-95 shadow-lg shadow-indigo-500/20"
+                className="w-12 h-12 rounded-xl bg-primary text-white hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center active:scale-95 shadow-md"
               >
-                <SendIcon size={16} />
+                <SendIcon size={20} />
               </button>
             </form>
           </>
         )}
       </main>
 
+      {/* ══ Forward Picker Modal ══ */}
+      {showForwardPicker && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white border border-border-dim rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-5 border-b border-border-dim flex justify-between items-center">
+              <h3 className="text-text-primary font-bold text-lg">Forward Message</h3>
+              <button onClick={() => setShowForwardPicker(false)} className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors">✕</button>
+            </div>
+            <div className="max-h-96 overflow-y-auto divide-y divide-dashed divide-border-dim">
+              {conversations.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => forwardMessage(c.id)}
+                  className="w-full px-6 py-4 hover:bg-gray-50 text-left flex items-center gap-4 transition-colors"
+                >
+                  <Avatar name={convName(c)} size={9} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-text-primary truncate">{convName(c)}</p>
+                    <p className="text-xs text-text-secondary font-medium mt-0.5">{c.kind === 'group' ? 'Group' : 'Direct Message'}</p>
+                  </div>
+                  <span className="text-primary text-xs font-black uppercase tracking-wider">Send</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ Group creation modal ══ */}
       {showGroupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h2 className="font-display font-bold text-white text-lg mb-4">Create Group Chat</h2>
-            <form onSubmit={createGroup} className="space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white border border-border-dim rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-xl font-bold text-text-primary">Create Group Chat</h2>
+              <button onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc('') }}
+                className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors">✕</button>
+            </div>
+            <form onSubmit={createGroup} className="space-y-6">
               <div>
-                <label className="text-xs font-semibold text-slate-400 uppercase block mb-1">Group Name *</label>
+                <label className="section-label block mb-2">Group Name *</label>
                 <input className="input" placeholder="e.g. CP Study Group" value={groupName} onChange={e => setGroupName(e.target.value)} required />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-400 uppercase block mb-1">Description</label>
-                <input className="input" placeholder="Optional description" value={groupDesc} onChange={e => setGroupDesc(e.target.value)} />
+                <label className="section-label block mb-2">Description</label>
+                <input className="input" placeholder="What is this group about?" value={groupDesc} onChange={e => setGroupDesc(e.target.value)} />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-400 uppercase block mb-1">Search & Add Members</label>
+                <label className="section-label block mb-2">Search & Add Members</label>
                 <input
-                  className="input text-xs py-2 mb-2"
-                  placeholder="Search users…"
+                  className="input mb-3"
+                  placeholder="Search users by name…"
                   value={searchQ}
                   onChange={e => setSearchQ(e.target.value)}
                 />
-                <div className="max-h-36 overflow-y-auto space-y-1">
+                <div className="max-h-40 overflow-y-auto space-y-1 border border-border-dim rounded-xl p-1 bg-gray-50">
                   {searchResults.filter(u => !selectedMembers.find(s => s.user_id === u.user_id)).map(u => (
                     <button type="button" key={u.user_id}
                       onClick={() => setSelectedMembers(prev => [...prev, u])}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-dark-600 text-left transition-colors">
-                      <Avatar name={u.name} size={6} />
-                      <span className="text-sm text-white">{u.name}</span>
-                      <span className="text-xs text-slate-500">{u.branch} Y{u.year}</span>
-                      <span className="ml-auto text-brand-400 text-xs">+ Add</span>
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white border border-transparent hover:border-border-dim text-left transition-all">
+                      <Avatar name={u.name} size={8} />
+                      <div className="min-w-0">
+                        <span className="text-sm font-bold text-text-primary block truncate">{u.name}</span>
+                        <span className="text-xs text-text-secondary font-medium">{u.branch} · Y{u.year}</span>
+                      </div>
+                      <span className="ml-auto text-primary text-xs font-black">+ ADD</span>
                     </button>
                   ))}
                 </div>
                 {selectedMembers.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
+                  <div className="flex flex-wrap gap-2 mt-4">
                     {selectedMembers.map(m => (
-                      <span key={m.user_id} className="flex items-center gap-1 bg-brand-500/15 text-brand-300 text-xs px-2 py-0.5 rounded-full border border-brand-500/30">
+                      <span key={m.user_id} className="flex items-center gap-1.5 bg-primary/5 text-primary text-xs px-3 py-1.5 rounded-full border border-primary/20 font-bold">
                         {m.name}
-                        <button type="button" onClick={() => setSelectedMembers(prev => prev.filter(s => s.user_id !== m.user_id))} className="hover:text-red-400 ml-0.5">×</button>
+                        <button type="button" onClick={() => setSelectedMembers(prev => prev.filter(s => s.user_id !== m.user_id))} className="hover:text-danger transition-colors ml-0.5 font-extrabold">×</button>
                       </span>
                     ))}
                   </div>
                 )}
               </div>
-              <div className="flex gap-3 mt-2">
+              <div className="flex gap-4 pt-2">
                 <button type="button" onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc('') }}
-                  className="btn-secondary flex-1">Cancel</button>
+                  className="btn-secondary flex-1 py-3">Cancel</button>
                 <button type="submit" disabled={!groupName.trim() || selectedMembers.length < 1}
-                  className="btn-primary flex-1">Create Group</button>
+                  className="btn-primary flex-1 py-3">Create Group</button>
               </div>
             </form>
           </div>
@@ -652,7 +819,7 @@ function SendIcon({ size = 20 }) {
   )
 }
 function Spinner() {
-  return <div className="w-6 h-6 border-2 border-accent-indigo border-t-transparent rounded-full animate-spin" />
+  return <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
 }
 function DotsIcon({ size = 20 }) {
   return (
@@ -678,10 +845,10 @@ function SlashIcon({ size = 20 }) {
     </svg>
   )
 }
-function AlertIcon({ size = 20 }) {
+function ShareIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
     </svg>
   )
 }

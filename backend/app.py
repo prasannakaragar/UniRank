@@ -19,6 +19,7 @@ from routes.leaderboard import leaderboard_bp
 from routes.announcements import announcements_bp
 from routes.teams import teams_bp
 from routes.chats import chats_bp
+from routes.uploads import uploads_bp
 from socket_io import socketio
 
 load_dotenv()
@@ -37,7 +38,14 @@ def create_app():
     # ── Extensions ─────────────────────────────────────────────────────────
     db.init_app(app)
     JWTManager(app)
-    CORS(app, origins=["http://localhost:5173", "http://localhost:3000", "http://localhost:5174"])
+    # Allow production frontend and local dev
+    allowed_origins = [
+        "http://localhost:5173", 
+        "http://localhost:5174", 
+        "http://localhost:3000",
+        os.getenv("FRONTEND_URL")
+    ]
+    CORS(app, origins=[o for o in allowed_origins if o], supports_credentials=True)
     
     # Initialize SocketIO
     socketio.init_app(app)
@@ -77,8 +85,15 @@ def create_app():
     app.limiter = limiter
 
     # ── Blueprints (all under /api prefix) ─────────────────────────────────
-    for bp in [auth_bp, profile_bp, leaderboard_bp, announcements_bp, teams_bp, chats_bp]:
+    for bp in [auth_bp, profile_bp, leaderboard_bp, announcements_bp, teams_bp, chats_bp, uploads_bp]:
         app.register_blueprint(bp, url_prefix="/api")
+
+    # ── Serve uploaded images ───────────────────────────────────────────────
+    from flask import send_from_directory
+    @app.route("/api/static/uploads/<path:filename>")
+    def serve_upload(filename):
+        upload_dir = os.path.join(app.root_path, "static", "uploads")
+        return send_from_directory(upload_dir, filename)
 
     # ── Health check ───────────────────────────────────────────────────────
     @app.route("/api/health")

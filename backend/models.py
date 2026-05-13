@@ -194,6 +194,10 @@ class Announcement(db.Document):
     mode        = db.StringField(max_length=50, default="Online")
     tags        = db.StringField(max_length=300, default="")
     deadline    = db.StringField(max_length=50)
+    banner_url  = db.StringField(max_length=500)
+    background_banner_url = db.StringField(max_length=500)
+    team_size   = db.StringField(max_length=50, default="Individual")
+    perks       = db.StringField(max_length=300, default="")
     is_pinned   = db.BooleanField(default=False)
     created_at  = db.DateTimeField(default=datetime.utcnow)
     expires_at  = db.DateTimeField()
@@ -213,6 +217,10 @@ class Announcement(db.Document):
             "mode": self.mode,
             "tags": [t.strip() for t in self.tags.split(",") if t.strip()],
             "deadline": self.deadline,
+            "banner_url": self.banner_url,
+            "background_banner_url": self.background_banner_url,
+            "team_size": self.team_size,
+            "perks": self.perks,
             "is_pinned": self.is_pinned,
             "created_at": self.created_at.isoformat(),
         }
@@ -327,33 +335,52 @@ class Conversation(db.Document):
 class Message(db.Document):
     """
     Individual message inside a Conversation.
-    status: 'sent' | 'delivered' | 'seen'
+    Supports real-time sync, forwarding, and multi-user deletion.
     """
     meta = {
         'collection': 'messages',
         'indexes': [
             'conversation',
             '-created_at',
+            'sender',
         ]
     }
 
-    conversation = db.ReferenceField(Conversation, reverse_delete_rule=db.CASCADE, required=True)
-    sender       = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
-    content      = db.StringField(required=True)
-    status       = db.StringField(max_length=15, default='sent')  # sent | delivered | seen
-    mentions     = db.ListField(db.ReferenceField(User))           # @mentions
-    is_deleted   = db.BooleanField(default=False)
-    created_at   = db.DateTimeField(default=datetime.utcnow)
+    conversation            = db.ReferenceField(Conversation, reverse_delete_rule=db.CASCADE, required=True)
+    sender                  = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
+    text                    = db.StringField(required=True, db_field='content')
+    status                  = db.StringField(max_length=15, default='sent')  # sent | delivered | seen
+    mentions                = db.ListField(db.ReferenceField(User))           # @mentions
+    forwarded               = db.BooleanField(default=False)
+    deleted_for             = db.ListField(db.ReferenceField(User))           # List of users who deleted this for themselves
+    is_deleted_for_everyone = db.BooleanField(default=False)
+    created_at              = db.DateTimeField(default=datetime.utcnow)
 
     def to_dict(self):
+        """
+        Returns a dictionary representation of the message.
+        Handles deletion logic: if is_deleted_for_everyone is true, content is replaced.
+        Note: The 'deleted_for' check should be handled in the route/view layer 
+        to ensure privacy based on the requesting user.
+        """
         return {
-            "id":           str(self.id),
-            "conversation": str(self.conversation.id),
-            "sender_id":    str(self.sender.id),
-            "sender_name":  self.sender.name,
-            "content":      "[deleted]" if self.is_deleted else self.content,
-            "status":       self.status,
-            "mentions":     [str(u.id) for u in (self.mentions or [])],
-            "is_deleted":   self.is_deleted,
-            "created_at":   self.created_at.isoformat(),
+            "messageId":               str(self.id),
+            "chatId":                  str(self.conversation.id),
+            "senderId":                str(self.sender.id),
+            "senderName":              self.sender.name,
+            "text":                    "This message was deleted" if self.is_deleted_for_everyone else self.text,
+            "status":                  self.status,
+            "forwarded":               self.forwarded,
+            "isDeletedForEveryone":    self.is_deleted_for_everyone,
+            "deletedFor":              [str(u.id) for u in (self.deleted_for or [])],
+            "timestamp":               self.created_at.isoformat(),
+            
+            # Backward compatibility fields (optional but helpful for transition)
+            "id":                      str(self.id),
+            "conversation":            str(self.conversation.id),
+            "sender_id":               str(self.sender.id),
+            "sender_name":             self.sender.name,
+            "content":                 "This message was deleted" if self.is_deleted_for_everyone else self.text,
+            "is_deleted":              self.is_deleted_for_everyone,
+            "created_at":              self.created_at.isoformat(),
         }

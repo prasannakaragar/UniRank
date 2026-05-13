@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
-function StatCard({ label, value, sub, accent }) {
+function StatCard({ label, value, sub, accent, highlight }) {
   return (
-    <div className="card flex flex-col gap-1">
-      <span className="text-xs font-display font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
-      <span className={`text-3xl font-display font-bold ${accent || 'text-white'}`}>{value ?? '—'}</span>
-      {sub && <span className="text-xs text-slate-500 font-mono">{sub}</span>}
+    <div className={`card flex flex-col justify-between min-h-[140px] ${highlight ? 'card-accent-strip' : ''}`}>
+      <div>
+        <span className="section-label">{label}</span>
+        <div className={`stat-value mt-2 ${accent || 'text-text-primary'}`}>{value ?? '—'}</div>
+      </div>
+      {sub && <span className="text-[13px] text-text-secondary font-medium mt-auto">{sub}</span>}
     </div>
   )
 }
@@ -31,30 +33,29 @@ export default function Dashboard() {
   }, [user])
 
   const rankColor = (r) => {
-    if (!r) return 'text-slate-400'
-    if (r === 1) return 'text-yellow-400 shadow-[0_0_10px_rgba(250,204,21,0.3)]'
-    if (r <= 3)  return 'text-orange-400'
-    if (r <= 10) return 'text-accent-indigo'
-    return 'text-white'
+    if (!r) return 'text-text-secondary'
+    if (r === 1) return 'text-secondary'
+    return 'text-text-primary'
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Header */}
       <div>
-        <h1 className="font-display font-bold text-3xl text-white">
-          Welcome back, <span className="text-accent-indigo">{user?.name?.split(' ')[0]}</span> 👋
+        <h1 className="text-4xl font-bold text-text-primary">
+          Welcome back, <span className="text-primary">{user?.name?.split(' ')[0]}</span> 👋
         </h1>
-        <p className="text-slate-400 mt-1 text-sm">{user?.branch} · Year {user?.year}</p>
+        <p className="text-text-secondary mt-2 text-[15px] font-medium">{user?.branch} · Year {user?.year}</p>
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          label="CF Rating"
+          label="Codeforces Rating"
           value={profile?.cf_rating || 0}
           sub={profile?.cf_rank || 'unrated'}
-          accent="text-accent-indigo"
+          accent="text-primary"
+          highlight
         />
         <StatCard
           label="Problems Solved"
@@ -64,82 +65,87 @@ export default function Dashboard() {
         <StatCard
           label="College Rank"
           value={rank ? `#${rank}` : '—'}
-          sub="leaderboard"
+          sub="Global Leaderboard"
           accent={rankColor(rank)}
+          highlight={rank === 1}
         />
         <StatCard
-          label="Branch"
-          value={user?.branch}
-          sub={`Year ${user?.year}`}
+          label="GitHub Score"
+          value={profile?.github_score ? `${profile.github_score}/10` : '—'}
+          sub="Project Analysis"
         />
       </div>
 
       {/* CF Handle CTA */}
       {!profile?.cf_handle && (
-        <div className="card border-accent-indigo/40 bg-accent-indigo/5 flex items-center justify-between">
+        <div className="bg-accent-pill border border-primary/20 rounded-xl p-6 flex items-center justify-between">
           <div>
-            <p className="font-display font-semibold text-white">Connect Codeforces</p>
-            <p className="text-sm text-slate-400 mt-0.5">Add your handle to appear on the leaderboard</p>
+            <p className="font-bold text-text-primary text-lg">Connect Codeforces</p>
+            <p className="text-sm text-text-secondary mt-1 font-medium">Add your handle to appear on the leaderboard and track your progress.</p>
           </div>
-          <Link to="/profile" className="btn-primary shrink-0">Set Handle →</Link>
+          <Link to="/profile" className="btn-primary py-2.5">Set Handle →</Link>
         </div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-2 gap-10">
         {/* Recent Announcements */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-lg text-white">Latest Opportunities</h2>
-            <Link to="/announcements" className="text-xs text-accent-indigo hover:text-accent-indigo transition-colors">View all →</Link>
+            <h2 className="text-xl font-bold text-text-primary">Latest Opportunities</h2>
+            <Link to="/announcements" className="text-sm font-bold text-primary hover:underline">View all →</Link>
           </div>
-          {announcements.length === 0 ? (
-            <div className="card text-center py-8 text-slate-500 text-sm">No announcements yet</div>
-          ) : announcements.map(a => (
-            <div key={a.id} className="card hover:border-dark-500 transition-colors">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <span className={`badge text-xs mb-1 ${
-                    a.category === 'hackathon' ? 'bg-purple-500/15 text-purple-400' :
-                    a.category === 'contest'   ? 'bg-blue-500/15 text-blue-400' :
-                    'bg-slate-500/15 text-slate-400'
-                  }`}>{a.category}</span>
-                  <p className="font-display font-semibold text-white text-sm truncate">{a.title}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">by {a.author}</p>
+          <div className="space-y-3">
+            {announcements.length === 0 ? (
+              <div className="card text-center py-10 text-text-secondary font-medium italic">No announcements yet</div>
+            ) : announcements.map(a => (
+              <div key={a.id} className="card py-4 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <span className={`badge mb-2 ${
+                      a.category === 'hackathon' ? 'badge-purple' :
+                      a.category === 'contest'   ? 'badge-blue' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>{a.category}</span>
+                    <p className="font-bold text-text-primary text-[15px] truncate">{a.title}</p>
+                    <p className="text-xs text-text-secondary mt-1 font-medium">by {a.author}</p>
+                  </div>
+                  {a.link && (
+                    <a href={a.link} target="_blank" rel="noreferrer"
+                       className="text-xs font-bold text-primary hover:underline shrink-0 bg-accent-pill px-3 py-1.5 rounded-lg">
+                      Apply →
+                    </a>
+                  )}
                 </div>
-                {a.link && (
-                  <a href={a.link} target="_blank" rel="noreferrer"
-                     className="text-xs text-accent-indigo hover:underline shrink-0 font-mono">
-                    Apply →
-                  </a>
-                )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* Recent Team Posts */}
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-display font-bold text-lg text-white">Team Board</h2>
-            <Link to="/teams" className="text-xs text-accent-indigo hover:text-accent-indigo transition-colors">View all →</Link>
+            <h2 className="text-xl font-bold text-text-primary">Team Board</h2>
+            <Link to="/teams" className="text-sm font-bold text-primary hover:underline">View all →</Link>
           </div>
-          {teams.length === 0 ? (
-            <div className="card text-center py-8 text-slate-500 text-sm">No team posts yet</div>
-          ) : teams.map(t => (
-            <div key={t.id} className="card hover:border-dark-500 transition-colors">
-              <div className="flex items-start gap-3">
-                <span className={`badge shrink-0 mt-0.5 ${
-                  t.post_type === 'looking' ? 'bg-green-500/15 text-green-400' : 'bg-amber-500/15 text-amber-400'
-                }`}>
-                  {t.post_type === 'looking' ? '🔍 Looking' : '📢 Recruiting'}
-                </span>
-                <div className="min-w-0">
-                  <p className="font-display font-semibold text-white text-sm truncate">{t.title}</p>
-                  <p className="text-xs text-slate-500">{t.author} · {t.author_branch} Y{t.author_year}</p>
+          <div className="space-y-3">
+            {teams.length === 0 ? (
+              <div className="card text-center py-10 text-text-secondary font-medium italic">No team posts yet</div>
+            ) : teams.map(t => (
+              <div key={t.id} className="card py-4 hover:shadow-md transition-shadow">
+                <div className="flex items-start gap-4">
+                  <span className={`badge shrink-0 px-3 py-1 ${
+                    t.post_type === 'looking' ? 'bg-green-50 text-green-600' : 'badge-amber'
+                  }`}>
+                    {t.post_type === 'looking' ? '🔍 Looking' : '📢 Recruiting'}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-bold text-text-primary text-[15px] truncate">{t.title}</p>
+                    <p className="text-xs text-text-secondary mt-1 font-medium uppercase tracking-wider">{t.author} · {t.author_branch} Y{t.author_year}</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>

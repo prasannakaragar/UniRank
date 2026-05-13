@@ -30,30 +30,31 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-accent-indigo/10 border border-accent-indigo/30 rounded-2xl mb-4 shadow-lg shadow-indigo-500/20">
-            <span className="text-accent-indigo font-display font-black text-2xl">U</span>
-          </div>
-          <h1 className="font-display font-bold text-3xl text-white">UniRank</h1>
-          <p className="text-slate-400 text-sm mt-1">Sign in to your college account</p>
-        </div>
+    <div className="min-h-screen bg-page flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Subtle radial glow */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/7 rounded-full blur-[120px] pointer-events-none" />
 
-        {/* Form */}
-        <div className="card space-y-5 relative overflow-hidden">
+      <div className="w-full max-w-[420px] relative z-10">
+        {/* Card */}
+        <div className="bg-white rounded-2xl border border-border-dim shadow-card p-10">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-primary rounded-xl mb-6">
+              <span className="text-white font-bold text-2xl">U</span>
+            </div>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">UniRank</h1>
+            <p className="text-text-secondary text-[15px]">Sign in to your college account</p>
+          </div>
+
           {error && (
-            <div className="bg-rose-500/10 border border-rose-500/30 rounded-lg px-4 py-3 text-rose-400 text-sm">
+            <div className="bg-danger/10 border border-danger/20 rounded-lg px-4 py-3 text-danger text-sm mb-6">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-xs font-display font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                College Email
-              </label>
+              <label className="section-label block mb-2">College Email</label>
               <input
                 className="input"
                 type="email"
@@ -65,9 +66,7 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-xs font-display font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Password
-              </label>
+              <label className="section-label block mb-2">Password</label>
               <input
                 className="input"
                 type="password"
@@ -78,14 +77,14 @@ export default function Login() {
               />
             </div>
 
-            <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
+            <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500">
+          <p className="text-center text-[14px] text-text-secondary mt-8">
             No account?{' '}
-            <Link to="/register" className="text-accent-indigo hover:text-accent-cyan font-bold transition-all">
+            <Link to="/register" className="text-primary font-bold underline decoration-primary/30 hover:decoration-primary transition-all">
               Register here
             </Link>
           </p>

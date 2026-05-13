@@ -28,40 +28,40 @@ export default function Layout() {
   }, [])
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-page">
       {/* ── Sidebar ── */}
-      <aside className="w-64 bg-void/50 backdrop-blur-2xl border-r border-glass-border flex flex-col fixed h-full z-10">
+      <aside className="w-[280px] bg-white border-r border-sidebar-border flex flex-col fixed h-full z-10">
         {/* Logo */}
-        <div className="px-6 py-6 border-b border-glass-border">
+        <div className="px-8 py-8">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-accent-indigo rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <span className="text-white font-display font-black text-sm">U</span>
+            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-xl">U</span>
             </div>
             <div>
-              <p className="font-display font-bold text-white text-lg leading-none tracking-tight">UniRank</p>
-              <p className="text-[10px] text-slate-500 font-mono mt-1 uppercase tracking-widest">Platform</p>
+              <p className="font-bold text-text-primary text-xl leading-none tracking-tight">UniRank</p>
+              <p className="text-[10px] text-text-secondary font-bold mt-1 uppercase tracking-[0.1em]">PLATFORM</p>
             </div>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-4 py-2 space-y-1">
           {nav.map(({ to, label, icon: Icon, badge }) => (
             <NavLink
               key={to}
               to={to}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-body transition-all duration-300 ${
+                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
                   isActive
-                    ? 'bg-accent-indigo/10 text-accent-indigo border border-accent-indigo/30 shadow-lg shadow-indigo-500/5'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    ? 'bg-accent-pill text-primary relative before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-1 before:bg-primary before:rounded-r-full'
+                    : 'text-text-secondary hover:bg-page'
                 }`
               }
             >
-              <Icon size={17} />
+              <Icon size={18} className="stroke-[2.5]" />
               {label}
               {badge && unread > 0 && (
-                <span className="ml-auto bg-accent-indigo text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg shadow-indigo-500/30">
+                <span className="ml-auto bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
@@ -70,27 +70,30 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-4 border-t border-glass-border">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-8 h-8 rounded-full bg-accent-indigo/10 border border-accent-indigo/30 flex items-center justify-center">
-              <span className="text-accent-indigo font-display font-bold text-xs">
+        <div className="px-6 py-6 border-t border-border-dim">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center border border-border-dim">
+              <span className="text-primary font-bold text-sm">
                 {user?.name?.[0]?.toUpperCase()}
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-display font-semibold text-white truncate">{user?.name}</p>
-              <p className="text-[10px] text-slate-500 truncate">{user?.branch} · Y{user?.year}</p>
+              <p className="text-sm font-bold text-text-primary truncate">{user?.name}</p>
+              <p className="text-[11px] text-text-secondary font-medium truncate uppercase tracking-wider">{user?.branch} · Y{user?.year}</p>
             </div>
           </div>
-          <button onClick={handleLogout} className="w-full text-left text-xs text-slate-500 hover:text-rose-400 transition-colors px-1 py-1 font-medium">
-            Sign out →
+          <button 
+            onClick={handleLogout} 
+            className="flex items-center gap-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors group"
+          >
+            Sign out <span className="group-hover:translate-x-1 transition-transform">→</span>
           </button>
         </div>
       </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 ml-64 min-h-screen">
-        <div className="max-w-6xl mx-auto px-6 py-8">
+      <main className="flex-1 ml-[280px] min-h-screen">
+        <div className="max-w-6xl mx-auto px-10 py-10">
           <Outlet />
         </div>
       </main>

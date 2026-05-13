@@ -153,6 +153,7 @@ def get_messages(conv_id):
     Returns paginated messages, oldest-first within a page.
     """
     uid  = get_jwt_identity()
+    user = _current_user()
     conv = Conversation.objects(id=conv_id).first()
     if not conv:
         return jsonify({"error": "Conversation not found"}), 404
@@ -164,7 +165,7 @@ def get_messages(conv_id):
     skip     = (page - 1) * per_page
 
     msgs = (
-        Message.objects(conversation=conv)
+        Message.objects(conversation=conv, deleted_for__ne=user)
         .order_by("-created_at")
         .skip(skip)
         .limit(per_page)
@@ -218,7 +219,7 @@ def send_message(conv_id):
     msg = Message(
         conversation=conv,
         sender=me,
-        content=content,
+        text=content,
         mentions=mentioned,
     )
     msg.save()
@@ -253,23 +254,101 @@ def send_message(conv_id):
 @chats_bp.route("/chats/<conv_id>/messages/<msg_id>", methods=["DELETE"])
 @jwt_required()
 def delete_message(conv_id, msg_id):
+    """
+    DELETE /api/chats/<conv_id>/messages/<msg_id>?mode=me|everyone
+    """
     uid = get_jwt_identity()
+    user = _current_user()
+    mode = request.args.get("mode", "me") # "me" or "everyone"
+
     msg = Message.objects(id=msg_id, conversation=conv_id).first()
     if not msg:
         return jsonify({"error": "Message not found"}), 404
-    if str(msg.sender.id) != uid:
-        return jsonify({"error": "Cannot delete another user's message"}), 403
 
-    msg.is_deleted = True
-    msg.content    = "[deleted]"
-    msg.save()
+    if mode == "everyone":
+        if str(msg.sender.id) != uid:
+            return jsonify({"error": "Cannot delete another user's message for everyone"}), 403
+        
+        msg.is_deleted_for_everyone = True
+        # msg.text = "This message was deleted" # Handled in to_dict
+        msg.save()
 
-    socketio.emit("message_deleted", {
-        "conversation_id": conv_id,
-        "message_id": msg_id
-    }, room=conv_id)
+        socketio.emit("message_deleted", {
+            "conversation_id": conv_id,
+            "message_id": msg_id,
+            "mode": "everyone"
+        }, room=conv_id)
+
+    else: # mode == "me"
+        if user not in msg.deleted_for:
+            msg.deleted_for.append(user)
+            msg.save()
+        
+        # Only notify the specific user for "delete for me"
+        socketio.emit("message_deleted", {
+            "conversation_id": conv_id,
+            "message_id": msg_id,
+            "mode": "me"
+        }, room=f"user_{uid}")
 
     return jsonify({"ok": True}), 200
+
+
+# ── Forward Message ───────────────────────────────────────────────────────────
+
+@chats_bp.route("/chats/messages/<msg_id>/forward", methods=["POST"])
+@jwt_required()
+def forward_message(msg_id):
+    """
+    POST /api/chats/messages/<msg_id>/forward
+    Body: { target_chat_id }
+    """
+    uid = get_jwt_identity()
+    me = _current_user()
+    data = request.get_json() or {}
+    target_chat_id = data.get("target_chat_id")
+
+    if not target_chat_id:
+        return jsonify({"error": "Target chat ID required"}), 400
+
+    old_msg = Message.objects(id=msg_id).first()
+    if not old_msg:
+        return jsonify({"error": "Original message not found"}), 404
+    
+    target_conv = Conversation.objects(id=target_chat_id).first()
+    if not target_conv or not _is_member(target_conv, uid):
+        return jsonify({"error": "Target chat not found or access denied"}), 403
+
+    # Create NEW message entry
+    new_msg = Message(
+        conversation=target_conv,
+        sender=me,
+        text=old_msg.text,
+        forwarded=True
+    )
+    new_msg.save()
+
+    # Update conversation preview
+    target_conv.last_message = "Forwarded: " + (new_msg.text[:100] + "...")
+    target_conv.last_sender = me.name
+    target_conv.updated_at = datetime.utcnow()
+    for m in target_conv.members:
+        if str(m.user.id) != uid:
+            m.unread_count += 1
+    target_conv.save()
+
+    # Broadcast
+    socketio.emit("new_message", {
+        "conversation_id": target_chat_id,
+        "message": new_msg.to_dict()
+    }, room=target_chat_id)
+
+    socketio.emit("message_forwarded", {
+        "source_message_id": msg_id,
+        "new_message": new_msg.to_dict()
+    }, room=f"user_{uid}")
+
+    return jsonify({"message": new_msg.to_dict()}), 201
 
 
 # ── Mark Conversation as Read ─────────────────────────────────────────────────

@@ -63,6 +63,10 @@ def create_announcement():
         mode=data.get("mode", "Online"),
         tags=data.get("tags", ""),
         deadline=data.get("deadline"),
+        banner_url=data.get("banner_url"),
+        background_banner_url=data.get("background_banner_url"),
+        team_size=data.get("team_size", "Individual"),
+        perks=data.get("perks", ""),
         expires_at=expires_at
     )
     post.save()
