@@ -251,6 +251,62 @@ def send_message(conv_id):
 
 # ── Soft-Delete Message ───────────────────────────────────────────────────────
 
+@chats_bp.route("/chats/<conv_id>/messages/bulk-delete", methods=["DELETE"])
+@jwt_required()
+def bulk_delete_messages(conv_id):
+    """
+    DELETE /api/chats/<conv_id>/messages/bulk-delete
+    Body: { message_ids: [...], mode: 'me' | 'everyone' }
+    """
+    uid = get_jwt_identity()
+    user = _current_user()
+    data = request.get_json() or {}
+    msg_ids = data.get("message_ids", [])
+    mode = data.get("mode", "me")
+
+    if not msg_ids:
+        return jsonify({"error": "No messages selected"}), 400
+
+    conv = Conversation.objects(id=conv_id).first()
+    if not conv or not _is_member(conv, uid):
+        return jsonify({"error": "Conversation not found or access denied"}), 403
+
+    deleted_count = 0
+    for mid in msg_ids:
+        msg = Message.objects(id=mid, conversation=conv_id).first()
+        if not msg:
+            continue
+
+        if mode == "everyone":
+            if str(msg.sender.id) == uid:
+                msg.delete()
+                deleted_count += 1
+                socketio.emit("message_deleted", {
+                    "conversation_id": conv_id,
+                    "message_id": mid,
+                    "mode": "everyone"
+                }, room=conv_id)
+        else: # mode == "me"
+            if user not in msg.deleted_for:
+                msg.deleted_for.append(user)
+                
+                # Cleanup: If everyone in the conversation has deleted it for themselves, 
+                # we can safely remove it from the DB entirely.
+                if len(msg.deleted_for) >= len(conv.members):
+                    msg.delete()
+                else:
+                    msg.save()
+                
+                deleted_count += 1
+                socketio.emit("message_deleted", {
+                    "conversation_id": conv_id,
+                    "message_id": mid,
+                    "mode": "me"
+                }, room=f"user_{uid}")
+
+    return jsonify({"ok": True, "deleted_count": deleted_count}), 200
+
+
 @chats_bp.route("/chats/<conv_id>/messages/<msg_id>", methods=["DELETE"])
 @jwt_required()
 def delete_message(conv_id, msg_id):
@@ -261,6 +317,10 @@ def delete_message(conv_id, msg_id):
     user = _current_user()
     mode = request.args.get("mode", "me") # "me" or "everyone"
 
+    conv = Conversation.objects(id=conv_id).first()
+    if not conv:
+        return jsonify({"error": "Conversation not found"}), 404
+
     msg = Message.objects(id=msg_id, conversation=conv_id).first()
     if not msg:
         return jsonify({"error": "Message not found"}), 404
@@ -269,9 +329,8 @@ def delete_message(conv_id, msg_id):
         if str(msg.sender.id) != uid:
             return jsonify({"error": "Cannot delete another user's message for everyone"}), 403
         
-        msg.is_deleted_for_everyone = True
-        # msg.text = "This message was deleted" # Handled in to_dict
-        msg.save()
+        # Hard delete from MongoDB
+        msg.delete()
 
         socketio.emit("message_deleted", {
             "conversation_id": conv_id,
@@ -282,7 +341,12 @@ def delete_message(conv_id, msg_id):
     else: # mode == "me"
         if user not in msg.deleted_for:
             msg.deleted_for.append(user)
-            msg.save()
+            
+            # Cleanup: If everyone has deleted it for themselves, hard delete from DB
+            if len(msg.deleted_for) >= len(conv.members):
+                msg.delete()
+            else:
+                msg.save()
         
         # Only notify the specific user for "delete for me"
         socketio.emit("message_deleted", {

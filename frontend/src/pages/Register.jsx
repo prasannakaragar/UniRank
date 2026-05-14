@@ -9,7 +9,7 @@ export default function Register() {
   const navigate = useNavigate()
 
   const [step, setStep]       = useState('register')
-  const [form, setForm]       = useState({ name: '', email: '', password: '', branch: '', year: '' })
+  const [form, setForm]       = useState({ name: '', email: '', password: '', branch: '', year: '', college: '' })
   const [otp, setOtp]         = useState(['', '', '', '', '', ''])
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState('')
@@ -47,11 +47,9 @@ export default function Register() {
     setError(''); setSuccess(''); setLoading(true)
     try {
       const res = await verifyOtp(form.email, otpString)
-      if (res.college_verified) {
+      if (res.token) {
         setSuccess('Email verified! Logging you in…')
         setTimeout(() => navigate('/dashboard'), 1500)
-      } else {
-        setError(res.warning || 'Your email domain is not recognised. Contact admin.')
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Verification failed.')
@@ -143,8 +141,14 @@ export default function Register() {
 
               <div>
                 <label className="section-label block mb-2">College Email</label>
-                <input className="input" type="email" placeholder="you@reva.edu.in" value={form.email}
+                <input className="input" type="email" placeholder="you@college.edu" value={form.email}
                   onChange={e => set('email', e.target.value)} required />
+              </div>
+
+              <div>
+                <label className="section-label block mb-2">Engineering College Name</label>
+                <input className="input" placeholder="e.g. REVA University" value={form.college}
+                  onChange={e => set('college', e.target.value)} required />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import api from '../api/axios'
 
 const RANK_COLORS = {
@@ -206,16 +206,18 @@ export default function Leaderboard() {
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-3">
                           {entry.avatar_url ? (
-                            <img src={entry.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover border border-border-dim" />
+                            <Link to={`/profile/${entry.user_id}`}>
+                              <img src={entry.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover border border-border-dim" />
+                            </Link>
                           ) : (
-                            <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center border border-border-dim">
+                            <Link to={`/profile/${entry.user_id}`} className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center border border-border-dim hover:bg-gray-200 transition-colors">
                               <span className="text-sm font-bold text-text-secondary">{entry.name[0]}</span>
-                            </div>
+                            </Link>
                           )}
                           <div>
-                            <p className={`text-[15px] font-bold ${isMe ? 'text-primary' : 'text-text-primary'}`}>
+                            <Link to={`/profile/${entry.user_id}`} className={`text-[15px] font-bold hover:underline ${isMe ? 'text-primary' : 'text-text-primary'}`}>
                               {entry.name} {isMe && <span className="text-xs ml-1">(YOU)</span>}
-                            </p>
+                            </Link>
                             <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider">Year {entry.year}</p>
                           </div>
                         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
@@ -41,13 +42,19 @@ function ScoreBadge({ label, score, color }) {
 }
 
 export default function Profile() {
-  const { user, refreshUser } = useAuth()
+  const { id } = useParams()
+  const { user: currentUser, refreshUser } = useAuth()
+  const isOwnProfile = !id || id === currentUser?.id
   const [profile, setProfile] = useState(null)
   const [editing, setEditing] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
+  const navigate = useNavigate()
+
+  // Follow Modal state
+  const [followModal, setFollowModal] = useState({ show: false, type: '', list: [], loading: false })
 
   // Profile form state
   const [form, setForm] = useState({
@@ -58,8 +65,9 @@ export default function Profile() {
   const [showHForm, setShowHForm] = useState(false)
   const [hForm, setHForm] = useState({ hackathon_name: '', position: 0, points: 0 })
 
-  const fetchProfile = () =>
-    api.get('/profile').then(r => {
+  const fetchProfile = () => {
+    const endpoint = id ? `/profile/${id}` : '/profile'
+    api.get(endpoint).then(r => {
       setProfile(r.data)
       setForm({
         cf_handle: r.data.cf_handle || '',
@@ -70,8 +78,10 @@ export default function Profile() {
         linkedin_url: r.data.linkedin_url || '',
       })
     })
+  }
 
-  useEffect(() => { fetchProfile() }, [])
+
+  useEffect(() => { fetchProfile() }, [id])
 
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true); setMsg(null)
@@ -98,6 +108,33 @@ export default function Profile() {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Sync failed.' })
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleFollowToggle = async () => {
+    try {
+      const endpoint = profile.is_following ? `/profile/${id || currentUser?.id}/unfollow` : `/profile/${id || currentUser?.id}/follow`
+      const res = await api.post(endpoint)
+      
+      setProfile(p => ({
+        ...p,
+        is_following: !p.is_following,
+        followers_count: res.data.followers_count
+      }))
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update follow status')
+    }
+  }
+
+  const handleOpenFollowModal = async (type) => {
+    setFollowModal({ show: true, type, list: [], loading: true })
+    try {
+      const targetId = id || currentUser?.id
+      const res = await api.get(`/profile/${targetId}/${type}`)
+      setFollowModal({ show: true, type, list: res.data, loading: false })
+    } catch (err) {
+      setFollowModal({ show: false, type: '', list: [], loading: false })
+      alert('Failed to load list')
     }
   }
 
@@ -146,17 +183,15 @@ export default function Profile() {
                 className="w-32 h-32 rounded-3xl object-cover border-4 border-white shadow-xl" />
             ) : (
               <div className="w-32 h-32 rounded-3xl bg-gray-50 border-4 border-white shadow-xl flex items-center justify-center">
-                <span className="text-primary font-bold text-5xl">{user?.name?.[0]}</span>
+                <span className="text-primary font-bold text-5xl">{profile?.name?.[0]}</span>
               </div>
+
             )}
-            <div className="absolute -bottom-2 -right-2 bg-secondary text-[#856404] px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border-2 border-white shadow-md">
-              RANK #{profile.global_rank || 'N/A'}
-            </div>
           </div>
 
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-4 mb-4">
-              <h1 className="text-4xl font-extrabold text-text-primary">{user?.name}</h1>
+              <h1 className="text-4xl font-extrabold text-text-primary">{profile.name}</h1>
               <div className="flex gap-2">
                 {profile.github_url && (
                   <a href={profile.github_url} target="_blank" rel="noreferrer" className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
@@ -170,15 +205,37 @@ export default function Profile() {
                 )}
               </div>
             </div>
-            <p className="text-text-secondary font-bold uppercase tracking-wider text-sm">{user?.branch} · Year {user?.year}</p>
-            <p className="text-text-secondary font-medium text-sm mt-1">{user?.email}</p>
+            <p className="text-text-secondary font-bold uppercase tracking-wider text-sm">{profile.branch} · Year {profile.year}</p>
+            <p className="text-text-secondary font-medium text-sm mt-1 mb-4">{profile.email}</p>
+            
+            <div className="flex gap-4 mb-4">
+              <div onClick={() => handleOpenFollowModal('followers')} className="text-sm cursor-pointer hover:underline">
+                <span className="font-bold text-text-primary">{profile.followers_count || 0}</span> <span className="text-text-secondary font-medium">Followers</span>
+              </div>
+              <div onClick={() => handleOpenFollowModal('following')} className="text-sm cursor-pointer hover:underline">
+                <span className="font-bold text-text-primary">{profile.following_count || 0}</span> <span className="text-text-secondary font-medium">Following</span>
+              </div>
+            </div>
+
             {profile.bio && <p className="text-gray-600 text-[15px] mt-6 leading-relaxed border-l-4 border-primary/10 pl-4">{profile.bio}</p>}
             
             <div className="flex gap-4 mt-8">
-              <button onClick={() => { setEditing(true); setMsg(null) }} className="btn-primary px-8 py-3">Edit Profile</button>
-              <button onClick={handleSync} disabled={syncing} className="bg-gray-100 text-gray-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 transition-all flex items-center gap-2">
-                {syncing ? '⟳ SYNCING...' : '⟳ SYNC STATS'}
-              </button>
+              {isOwnProfile ? (
+                <>
+                  <button onClick={() => { setEditing(true); setMsg(null) }} className="btn-primary px-8 py-3">Edit Profile</button>
+                  <button onClick={handleSync} disabled={syncing} className="bg-gray-100 text-gray-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 transition-all flex items-center gap-2">
+                    {syncing ? '⟳ SYNCING...' : '⟳ SYNC STATS'}
+                  </button>
+                </>
+              ) : (
+                <button onClick={handleFollowToggle} className={`px-8 py-3 rounded-xl font-bold transition-all ${
+                  profile.is_following 
+                    ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-200' 
+                    : 'btn-primary'
+                }`}>
+                  {profile.is_following ? 'Following' : 'Follow'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -216,15 +273,7 @@ export default function Profile() {
           {/* Main Ratings Row */}
           <div className="card p-8 md:col-span-2">
             <h3 className="section-label mb-8">COMPETITIVE STANDINGS</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-10">
-              <div>
-                <p className="text-4xl font-extrabold text-primary">{profile.combined_score?.toFixed(0) || 0}</p>
-                <p className="text-[11px] font-black text-text-secondary uppercase tracking-wider mt-2">UniRank Score</p>
-              </div>
-              <div>
-                <p className="text-4xl font-extrabold text-text-primary">#{profile.global_rank || 'N/A'}</p>
-                <p className="text-[11px] font-black text-text-secondary uppercase tracking-wider mt-2">Global Rank</p>
-              </div>
+            <div className="grid grid-cols-2 gap-10">
               <div>
                 <p className="text-4xl font-extrabold" style={{ color: rankColor }}>{profile.cf_rating || 0}</p>
                 <p className="text-[11px] font-black text-text-secondary uppercase tracking-wider mt-2">CF Rating</p>
@@ -430,6 +479,51 @@ export default function Profile() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+      
+      {/* Follow Modal */}
+      {followModal.show && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white border border-border-dim rounded-2xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border-dim">
+              <h2 className="text-xl font-bold text-text-primary capitalize">{followModal.type}</h2>
+              <button onClick={() => setFollowModal({ ...followModal, show: false })} className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors">✕</button>
+            </div>
+            <div className="overflow-y-auto p-4 flex-1">
+              {followModal.loading ? (
+                <div className="flex justify-center py-10">
+                  <div className="w-6 h-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+                </div>
+              ) : followModal.list.length === 0 ? (
+                <div className="text-center py-10 text-text-secondary italic">No users found.</div>
+              ) : (
+                <div className="space-y-2">
+                  {followModal.list.map(u => (
+                    <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-page/50 transition-colors">
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover border border-border-dim" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center border border-border-dim">
+                          <span className="text-sm font-bold text-text-secondary">{u.name[0]}</span>
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <Link 
+                          to={`/profile/${u.id}`}
+                          onClick={() => setFollowModal({ ...followModal, show: false })}
+                          className="text-[15px] font-bold text-text-primary hover:text-primary hover:underline truncate block"
+                        >
+                          {u.name}
+                        </Link>
+                        <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider truncate">{u.branch} · Year {u.year}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

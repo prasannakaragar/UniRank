@@ -123,18 +123,16 @@ export default function Chats() {
     })
 
     socket.on('message_deleted', (data) => {
-      setMessages(prev => prev.map(m => {
+      setMessages(prev => prev.filter(m => {
+        // If message is the one being deleted
         if (m.messageId === data.message_id) {
-          if (data.mode === 'everyone') {
-            return { ...m, isDeletedForEveryone: true, text: 'This message was deleted' }
-          } else {
-            // If it was 'delete for me', it should have been filtered out by the backend on reload,
-            // but for instant feedback we filter it here.
-            return null
-          }
+          // If deleted for everyone, we remove it from UI (it's hard deleted in DB now)
+          if (data.mode === 'everyone') return false
+          // If deleted for me, we remove it from UI
+          return false
         }
-        return m
-      }).filter(Boolean))
+        return true
+      }))
     })
 
     socket.on('unread_update', (data) => {
@@ -236,13 +234,19 @@ export default function Chats() {
     }
   }
 
-  const deleteSelected = async () => {
-      if (!window.confirm(`Delete ${selectedIds.length} messages for me?`)) return
-      for (const id of selectedIds) {
-          await api.delete(`/chats/${activeConv.id}/messages/${id}?mode=me`).catch(() => {})
+  const deleteSelected = async (mode = 'me') => {
+      const label = mode === 'everyone' ? `Delete ${selectedIds.length} messages for everyone?` : `Delete ${selectedIds.length} messages for me?`
+      if (!window.confirm(label)) return
+      
+      try {
+          await api.delete(`/chats/${activeConv.id}/messages/bulk-delete`, {
+              data: { message_ids: selectedIds, mode }
+          })
+          setSelectionMode(false)
+          setSelectedIds([])
+      } catch (err) {
+          alert(err.response?.data?.error || 'Failed to delete messages')
       }
-      setSelectionMode(false)
-      setSelectedIds([])
   }
 
   /* ── forward message ── */
@@ -563,9 +567,19 @@ export default function Chats() {
                 <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-text-primary px-6 py-3 rounded-full shadow-2xl flex items-center gap-8 z-40 animate-in slide-in-from-top-4 duration-300">
                     <span className="text-white text-xs font-bold uppercase tracking-widest">{selectedIds.length} SELECTED</span>
                     <div className="flex items-center gap-5">
-                        <button onClick={deleteSelected} className="text-white/70 hover:text-white transition-colors" title="Delete selected">
+                        <button onClick={() => deleteSelected('me')} className="text-white/70 hover:text-white transition-colors" title="Delete for Me">
                             <TrashIcon size={16} />
                         </button>
+                        {/* Only show 'Delete for Everyone' if all selected messages are from me */}
+                        {selectedIds.every(id => messages.find(m => m.messageId === id)?.senderId === user?.id) && (
+                            <button 
+                                onClick={() => deleteSelected('everyone')} 
+                                className="bg-danger text-white text-[9px] font-black px-2 py-1 rounded hover:brightness-110 transition-all"
+                                title="Delete for Everyone"
+                            >
+                                EVERYONE
+                            </button>
+                        )}
                         <button onClick={() => alert('Forwarding multiple messages is coming soon!')} className="text-white/70 hover:text-white transition-colors" title="Forward selected">
                             <ShareIcon size={16} />
                         </button>

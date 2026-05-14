@@ -20,7 +20,10 @@ def get_my_profile():
     user_id = get_jwt_identity()
     user = User.objects(id=user_id).first_or_404()
     profile = Profile.objects(user=user).first_or_404()
-    return jsonify({**user.to_dict(), **profile.to_dict()}), 200
+    
+    data = {**user.to_dict(), **profile.to_dict()}
+    data["combined_score"] = profile.global_score # Map to frontend field name
+    return jsonify(data), 200
 
 
 @profile_bp.route("/profile/<uid>", methods=["GET"])
@@ -29,7 +32,95 @@ def get_profile(uid):
     """GET /api/profile/<uid> — public profile view."""
     user = User.objects(id=uid).first_or_404()
     profile = Profile.objects(user=user).first_or_404()
-    return jsonify({**user.to_dict(), **profile.to_dict()}), 200
+    
+    data = {**user.to_dict(), **profile.to_dict()}
+    data["combined_score"] = profile.global_score # Map to frontend field name
+    
+    current_user_id = get_jwt_identity()
+    current_user = User.objects(id=current_user_id).first()
+    data["is_following"] = current_user in profile.followers if current_user else False
+    
+    return jsonify(data), 200
+
+@profile_bp.route("/profile/<uid>/follow", methods=["POST"])
+@jwt_required()
+def follow_user(uid):
+    current_user_id = get_jwt_identity()
+    if str(uid) == str(current_user_id):
+        return jsonify({"error": "Cannot follow yourself"}), 400
+        
+    current_user = User.objects(id=current_user_id).first_or_404()
+    target_user = User.objects(id=uid).first_or_404()
+    
+    current_profile = Profile.objects(user=current_user).first_or_404()
+    target_profile = Profile.objects(user=target_user).first_or_404()
+    
+    if current_user not in target_profile.followers:
+        target_profile.followers.append(current_user)
+        target_profile.save()
+        
+    if target_user not in current_profile.following:
+        current_profile.following.append(target_user)
+        current_profile.save()
+        
+    return jsonify({"message": "Successfully followed user", "followers_count": len(target_profile.followers)}), 200
+
+@profile_bp.route("/profile/<uid>/unfollow", methods=["POST"])
+@jwt_required()
+def unfollow_user(uid):
+    current_user_id = get_jwt_identity()
+    
+    current_user = User.objects(id=current_user_id).first_or_404()
+    target_user = User.objects(id=uid).first_or_404()
+    
+    current_profile = Profile.objects(user=current_user).first_or_404()
+    target_profile = Profile.objects(user=target_user).first_or_404()
+    
+    if current_user in target_profile.followers:
+        target_profile.followers.remove(current_user)
+        target_profile.save()
+        
+    if target_user in current_profile.following:
+        current_profile.following.remove(target_user)
+        current_profile.save()
+        
+    return jsonify({"message": "Successfully unfollowed user", "followers_count": len(target_profile.followers)}), 200
+
+@profile_bp.route("/profile/<uid>/followers", methods=["GET"])
+@jwt_required()
+def get_followers(uid):
+    user = User.objects(id=uid).first_or_404()
+    profile = Profile.objects(user=user).first_or_404()
+    
+    followers_data = []
+    for follower in profile.followers:
+        f_profile = Profile.objects(user=follower).first()
+        followers_data.append({
+            "id": str(follower.id),
+            "name": follower.name,
+            "branch": follower.branch,
+            "year": follower.year,
+            "avatar_url": f_profile.avatar_url if f_profile else None
+        })
+    return jsonify(followers_data), 200
+
+@profile_bp.route("/profile/<uid>/following", methods=["GET"])
+@jwt_required()
+def get_following(uid):
+    user = User.objects(id=uid).first_or_404()
+    profile = Profile.objects(user=user).first_or_404()
+    
+    following_data = []
+    for f in profile.following:
+        f_profile = Profile.objects(user=f).first()
+        following_data.append({
+            "id": str(f.id),
+            "name": f.name,
+            "branch": f.branch,
+            "year": f.year,
+            "avatar_url": f_profile.avatar_url if f_profile else None
+        })
+    return jsonify(following_data), 200
 
 
 @profile_bp.route("/profile", methods=["PUT"])

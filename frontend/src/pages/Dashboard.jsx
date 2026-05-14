@@ -15,7 +15,7 @@ function StatCard({ label, value, sub, accent, highlight }) {
   )
 }
 
-export default function Dashboard() {
+function StudentDashboard() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [rank, setRank]       = useState(null)
@@ -150,4 +150,62 @@ export default function Dashboard() {
       </div>
     </div>
   )
+}
+
+function MentorDashboard() {
+  const { user } = useAuth()
+  return (
+    <div className="space-y-10">
+      <div>
+        <h1 className="text-4xl font-bold text-text-primary">
+          Mentor Dashboard 👋
+        </h1>
+        <p className="text-text-secondary mt-2 text-[15px] font-medium">Read-only view for {user?.name}</p>
+      </div>
+      <div className="card text-center py-20 text-text-secondary">
+        <p className="font-bold text-lg mb-2">Welcome, Mentor.</p>
+        <p>You have read-only access to view the Leaderboard and Hackathons.</p>
+      </div>
+    </div>
+  )
+}
+
+function AdminDashboard() {
+  const { user } = useAuth()
+  return (
+    <div className="space-y-10">
+      <div>
+        <h1 className="text-4xl font-bold text-text-primary text-red-600">
+          Admin Control Panel ⚙️
+        </h1>
+        <p className="text-text-secondary mt-2 text-[15px] font-medium">Full access for {user?.name}</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card bg-red-50/50 border-red-100">
+          <h3 className="font-bold text-lg text-red-700">Manage Users</h3>
+          <p className="text-sm mt-2 text-text-secondary">Edit user profiles and modify points.</p>
+        </div>
+        <div className="card bg-blue-50/50 border-blue-100">
+          <h3 className="font-bold text-lg text-blue-700">Manage Hackathons</h3>
+          <p className="text-sm mt-2 text-text-secondary">Add, update, or delete hackathon events.</p>
+        </div>
+        <div className="card bg-purple-50/50 border-purple-100">
+          <h3 className="font-bold text-lg text-purple-700">Leaderboard Control</h3>
+          <p className="text-sm mt-2 text-text-secondary">Adjust rankings and verify scores manually.</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Dashboard() {
+  const { user } = useAuth()
+
+  if (user?.role === 'admin') {
+    return <AdminDashboard />
+  } else if (user?.role === 'mentor' || user?.role === 'faculty') {
+    return <MentorDashboard />
+  }
+
+  return <StudentDashboard />
 }

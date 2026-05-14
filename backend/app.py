@@ -69,7 +69,7 @@ def create_app():
         app.config["CACHE_REDIS_URL"] = redis_url
         storage_uri = redis_url
     else:
-        print("⚠️  Redis not found at localhost:6379. Falling back to in-memory storage.")
+        print("WARNING: Redis not found at localhost:6379. Falling back to in-memory storage.")
         app.config["CACHE_TYPE"] = "SimpleCache"
         storage_uri = "memory://"
 

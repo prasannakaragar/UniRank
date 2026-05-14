@@ -19,8 +19,6 @@ export default function Login() {
       const data = err.response?.data
       if (data?.needs_verification) {
         setError('Your email is not verified yet. Please check your inbox for the OTP or register again.')
-      } else if (data?.college_verified === false) {
-        setError('Your email domain is not recognised. Only @reva.edu.in accounts are allowed. Contact admin for manual verification.')
       } else {
         setError(data?.error || 'Login failed. Please try again.')
       }
@@ -58,7 +56,7 @@ export default function Login() {
               <input
                 className="input"
                 type="email"
-                placeholder="you@reva.edu.in"
+                placeholder="you@college.edu"
                 value={form.email}
                 onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                 required

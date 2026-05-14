@@ -4,6 +4,18 @@ from datetime import datetime
 db = MongoEngine()
 
 
+class College(db.Document):
+    """
+    Registry of allowed college domains.
+    """
+    meta = {'collection': 'colleges'}
+    name   = db.StringField(max_length=200, required=True)
+    domain = db.StringField(max_length=100, unique=True, required=True)
+
+    def to_dict(self):
+        return {"name": self.name, "domain": self.domain}
+
+
 class PendingUser(db.Document):
     """
     Temporary storage for users who haven't verified their OTP yet.
@@ -20,6 +32,7 @@ class PendingUser(db.Document):
     password = db.StringField(max_length=256, required=True)
     branch = db.StringField(max_length=100, required=True)
     year = db.IntField(required=True)
+    college = db.StringField(max_length=200) # Auto-detected or selected
     otp_hash = db.StringField(required=True)
     otp_expiry = db.DateTimeField(required=True)
     attempts = db.IntField(default=0)
@@ -47,6 +60,7 @@ class User(db.Document):
     password     = db.StringField(max_length=256, required=True)   # bcrypt hash
     branch       = db.StringField(max_length=100, required=True)
     year         = db.IntField(required=True)                      # 1 / 2 / 3 / 4
+    college      = db.StringField(max_length=200, default="Unknown")
     role             = db.StringField(max_length=20, default="student") # student / faculty
     is_verified      = db.BooleanField(default=False)
     college_verified = db.BooleanField(default=False)
@@ -64,6 +78,7 @@ class User(db.Document):
             "email": self.email,
             "branch": self.branch,
             "year": self.year,
+            "college": self.college,
             "role": self.role,
             "is_verified": self.is_verified,
             "college_verified": self.college_verified,
@@ -104,6 +119,10 @@ class Profile(db.Document):
     github_url         = db.StringField(max_length=200)
     linkedin_url       = db.StringField(max_length=200)
     last_synced        = db.DateTimeField()
+    
+    # Social
+    followers          = db.ListField(db.ReferenceField(User))
+    following          = db.ListField(db.ReferenceField(User))
 
     # GitHub Analysis (Review)
     github_impl_score    = db.FloatField(default=0.0)
@@ -136,6 +155,8 @@ class Profile(db.Document):
             "skills": self.skills.split(",") if self.skills else [],
             "github_url": self.github_url,
             "linkedin_url": self.linkedin_url,
+            "followers_count": len(self.followers),
+            "following_count": len(self.following),
             "last_synced": self.last_synced.isoformat() if self.last_synced else None,
             "hackathon_score": self.hackathon_score,
             "activity_score": self.activity_score,
@@ -384,3 +405,41 @@ class Message(db.Document):
             "is_deleted":              self.is_deleted_for_everyone,
             "created_at":              self.created_at.isoformat(),
         }
+
+
+class ProjectReview(db.Document):
+    """
+    Highlighted projects with evaluation scores from the core team.
+    """
+    meta = {'collection': 'project_reviews'}
+
+    name                  = db.StringField(max_length=200, required=True)
+    description           = db.StringField(required=True)
+    implementation_score  = db.FloatField(default=0.0)
+    implementation_reason = db.StringField(default="")
+    impact_score          = db.FloatField(default=0.0)
+    impact_reason         = db.StringField(default="")
+    working_score         = db.FloatField(default=0.0)
+    working_reason        = db.StringField(default="")
+    total_score           = db.FloatField(default=0.0)
+    created_at            = db.DateTimeField(default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "scores": {
+                "implementation": self.implementation_score,
+                "impact": self.impact_score,
+                "working": self.working_score,
+                "total": self.total_score
+            },
+            "reasons": {
+                "implementation": self.implementation_reason,
+                "impact": self.impact_reason,
+                "working": self.working_reason
+            },
+            "created_at": self.created_at.isoformat()
+        }
+

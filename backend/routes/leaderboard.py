@@ -20,7 +20,7 @@ def get_lb_cache_key():
 @jwt_required()
 def get_leaderboard():
     """
-    GET /api/leaderboard
+    GET /api/leaderboard?type=cp|hackathon|github&scope=global|college
     """
     cache = current_app.cache
     cache_key = get_lb_cache_key()
@@ -34,18 +34,13 @@ def get_leaderboard():
 
     lb_type = request.args.get("type", "cp")
     scope = request.args.get("scope", "global")
-    college_filter = request.args.get("college")
     branch = request.args.get("branch")
     year = request.args.get("year")
 
+    # 1. Base User Query (Filtering)
     user_query = User.objects()
-    
     if scope == "college":
-        if college_filter:
-            domain = college_filter
-        else:
-            domain = current_user.email.split("@")[1] if current_user else ""
-            
+        domain = current_user.email.split("@")[1] if current_user else ""
         if domain:
             user_query = user_query.filter(email__endswith=f"@{domain}")
 
@@ -54,18 +49,27 @@ def get_leaderboard():
     if year:
         user_query = user_query.filter(year=int(year))
 
-    query_params = {'user__in': user_query}
-    query = Profile.objects(**query_params)
+    # 2. Map LB Type to Sort Field
+    sort_map = {
+        "cp": "-cp_score",
+        "hackathon": "-hackathon_score",
+        "github": "-github_total_score"
+    }
+    sort_field = sort_map.get(lb_type, "-cp_score")
 
+    # 3. Profile Query
+    query = Profile.objects(user__in=user_query)
+    
+    # Optional: Filter out profiles with 0 score for that category
     if lb_type == "cp":
         from mongoengine import Q
-        query = query.filter(Q(cf_handle__exists=True, cf_handle__ne="") | Q(lc_username__exists=True, lc_username__ne="")).order_by('-cp_score')
-    elif lb_type == "hackathon":
-        query = query.order_by('-hackathon_score')
+        query = query.filter(Q(cf_handle__exists=True, cf_handle__ne="") | Q(lc_username__exists=True, lc_username__ne=""))
     elif lb_type == "github":
-        query = query.filter(github_total_score__gt=0).order_by('-github_total_score')
+        query = query.filter(github_total_score__gt=0)
+    
+    query = query.order_by(sort_field)
 
-    # Pagination
+    # 4. Pagination
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, int(request.args.get("per_page", 50)))
     skip = (page - 1) * per_page
@@ -74,6 +78,7 @@ def get_leaderboard():
     profiles = query.skip(skip).limit(per_page)
     leaderboard = []
 
+    # 5. Build Result (Rank is skip + index)
     for idx, p in enumerate(profiles):
         rank = skip + idx + 1
         user = p.user
@@ -87,7 +92,6 @@ def get_leaderboard():
         }
 
         if lb_type == "cp":
-            cp_score = (p.cf_rating + p.lc_rating) / 2
             entry.update({
                 "cf_handle": p.cf_handle,
                 "cf_rating": p.cf_rating,
@@ -96,7 +100,7 @@ def get_leaderboard():
                 "lc_username": p.lc_username,
                 "lc_rating": p.lc_rating,
                 "lc_problems_solved": p.lc_problems_solved,
-                "cp_score": round(cp_score, 1)
+                "cp_score": round(p.cp_score, 1)
             })
         elif lb_type == "hackathon":
             h_count = HackathonResult.objects(user=user).count()
@@ -122,7 +126,7 @@ def get_leaderboard():
         "page": page,
         "per_page": per_page
     }
-    cache.set(cache_key, response_data, timeout=300) # Cache for 5 minutes
+    cache.set(cache_key, response_data, timeout=300)
 
     return jsonify(response_data), 200
 
