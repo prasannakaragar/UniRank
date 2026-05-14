@@ -81,8 +81,9 @@ export default function Chats() {
   useEffect(() => {
     if (!user) return
     
-    // Connect to socket
-    const socket = io('/', { path: '/socket.io' })
+    // Connect to socket - Use environment variable for production, fallback to '/' for local proxy
+    const socketUrl = import.meta.env.VITE_API_URL || '/'
+    const socket = io(socketUrl, { path: '/socket.io' })
     socketRef.current = socket
 
     socket.on('connect', () => {
