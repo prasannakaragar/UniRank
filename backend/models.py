@@ -1,7 +1,12 @@
 # Patch for Flask 3.0+ compatibility with flask-mongoengine 1.0.0
+# Fix #1: JSONEncoder/JSONDecoder removed from flask.json in Flask 2.3+
 import flask.json
 import json
 flask.json.JSONEncoder = json.JSONEncoder
+flask.json.JSONDecoder = json.JSONDecoder
+# Fix #2: app.json_encoder removed from Flask 2.3+; neutralize the setter
+import flask_mongoengine.json as _fme_json
+_fme_json.override_json_encoder = lambda app: None
 
 from flask_mongoengine import MongoEngine
 from datetime import datetime
