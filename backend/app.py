@@ -57,12 +57,11 @@ def create_app():
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
     
     # Check if we should use Redis or fallback to memory
-    # In a real prod environment, you'd want this to fail, but for dev we allow fallback
     use_redis = True
-    if os.getenv("FLASK_ENV") != "production":
+    # If REDIS_URL is missing or local, check if it's reachable
+    if not os.getenv("REDIS_URL") or "localhost" in redis_url or "127.0.0.1" in redis_url:
         import socket
         try:
-            # Quick check if redis is reachable
             socket.create_connection(("localhost", 6379), timeout=1)
         except:
             use_redis = False
