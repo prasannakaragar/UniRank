@@ -3,6 +3,14 @@ app.py — UniRank Flask Backend
 Entry point. Registers all blueprints and initializes extensions.
 Run: python app.py
 """
+# ── Flask 3.x compatibility patch for flask-mongoengine 1.0.0 ──
+import json
+import flask.json
+if not hasattr(flask.json, 'JSONEncoder'):
+    flask.json.JSONEncoder = json.JSONEncoder
+if not hasattr(flask.json, 'JSONDecoder'):
+    flask.json.JSONDecoder = json.JSONDecoder
+
 import os
 from flask import Flask
 from flask_cors import CORS

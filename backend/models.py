@@ -1,3 +1,8 @@
+# Patch for Flask 3.0+ compatibility with flask-mongoengine 1.0.0
+import flask.json
+import json
+flask.json.JSONEncoder = json.JSONEncoder
+
 from flask_mongoengine import MongoEngine
 from datetime import datetime
 
