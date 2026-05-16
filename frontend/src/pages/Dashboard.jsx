@@ -154,17 +154,80 @@ function StudentDashboard() {
 
 function MentorDashboard() {
   const { user } = useAuth()
+  const [topStudents, setTopStudents] = useState([])
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Mentors see top students
+    api.get('/leaderboard?limit=5').then(r => setTopStudents(r.data.leaderboard.slice(0, 5))).catch(() => {})
+    // Mentors can see general stats (if we allow them or use a public stats endpoint)
+    // For now, let's assume they can see basic counts
+    api.get('/admin/stats').then(r => setStats(r.data)).catch(() => {})
+    setLoading(false)
+  }, [])
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 animate-in fade-in duration-500">
       <div>
         <h1 className="text-4xl font-bold text-text-primary">
-          Mentor Dashboard 👋
+          Mentor Dashboard <span className="text-primary">🎓</span>
         </h1>
-        <p className="text-text-secondary mt-2 text-[15px] font-medium">Read-only view for {user?.name}</p>
+        <p className="text-text-secondary mt-2 text-[15px] font-medium">Monitoring student performance for {user?.name}</p>
       </div>
-      <div className="card text-center py-20 text-text-secondary">
-        <p className="font-bold text-lg mb-2">Welcome, Mentor.</p>
-        <p>You have read-only access to view the Leaderboard and Hackathons.</p>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard label="Total Students" value={stats?.total_users} accent="text-primary" highlight />
+        <StatCard label="Hackathons" value={stats?.total_hackathon_results} />
+        <StatCard label="Active Teams" value={stats?.total_teams} />
+        <StatCard label="Announcements" value={stats?.total_announcements} />
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-10">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-text-primary">Top Performers</h2>
+            <Link to="/leaderboard" className="text-sm font-bold text-primary hover:underline">Full Leaderboard →</Link>
+          </div>
+          <div className="card overflow-hidden p-0">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b border-border-dim">
+                <tr>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Rank</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Student</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Branch</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-dim">
+                {topStudents.map((s, idx) => (
+                  <tr key={s.user_id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-6 py-4 font-bold text-text-secondary text-sm">#{idx + 1}</td>
+                    <td className="px-6 py-4">
+                      <p className="font-bold text-text-primary text-sm">{s.name}</p>
+                      <p className="text-[10px] text-text-secondary font-medium uppercase">{s.college}</p>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-text-secondary font-medium">{s.branch}</td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm font-extrabold text-primary">{s.global_score?.toFixed(1)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-text-primary">Recent Activity</h2>
+          <div className="card bg-accent-pill/30 border-dashed border-primary/20 flex flex-col items-center justify-center py-10 text-center">
+            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm">
+              <span className="text-xl">📊</span>
+            </div>
+            <p className="text-sm font-bold text-text-primary">Analytics Engine</p>
+            <p className="text-[12px] text-text-secondary mt-1 px-4">Student performance trends and automated reports are being generated.</p>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -172,27 +235,199 @@ function MentorDashboard() {
 
 function AdminDashboard() {
   const { user } = useAuth()
+  const [view, setView] = useState('overview') // overview | users | hackathons | leaderboard
+  const [stats, setStats] = useState(null)
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (view === 'overview') {
+      api.get('/admin/stats').then(r => setStats(r.data)).catch(() => {})
+    } else if (view === 'users') {
+      setLoading(true)
+      api.get('/admin/users').then(r => setUsers(r.data.users)).finally(() => setLoading(false))
+    }
+  }, [view])
+
+  const handleRoleChange = async (uid, newRole) => {
+    try {
+      await api.post(`/admin/user/${uid}/role`, { role: newRole })
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, role: newRole } : u))
+    } catch (err) {
+      alert("Failed to update role")
+    }
+  }
+
+  const handleAdjustScore = async (uid, points) => {
+    try {
+      const res = await api.post(`/admin/user/${uid}/score`, { points, reason: "Manual Admin Adjustment" })
+      setUsers(prev => prev.map(u => u.id === uid ? { ...u, global_score: res.data.new_score } : u))
+    } catch (err) {
+      alert("Failed to adjust score")
+    }
+  }
+
+  const handleRecalculateAll = async () => {
+    setLoading(true)
+    try {
+      await api.post('/admin/recalculate')
+      alert("Global score recalculation complete!")
+      // Refresh stats/users
+      api.get('/admin/stats').then(r => setStats(r.data))
+      if (view === 'users') api.get('/admin/users').then(r => setUsers(r.data.users))
+    } catch (err) {
+      alert("Recalculation failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (view === 'users') {
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setView('overview')} className="text-primary font-bold hover:underline">← Back to Overview</button>
+          <h2 className="text-2xl font-bold text-text-primary">Manage Users & Scores</h2>
+        </div>
+        <div className="card overflow-hidden p-0">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-gray-50 border-b border-border-dim">
+              <tr>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Name / Email</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Academic</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Score</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Adjust</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Role</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-dim">
+              {users.map(u => (
+                <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
+                  <td className="px-6 py-4">
+                    <p className="font-bold text-text-primary">{u.name}</p>
+                    <p className="text-xs text-text-secondary font-medium">{u.email}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="text-sm font-medium text-text-primary">{u.branch}</p>
+                    <p className="text-xs text-text-secondary">Year {u.year}</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-extrabold text-primary">{u.global_score.toFixed(1)}</span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex gap-2">
+                      <button onClick={() => handleAdjustScore(u.id, 50)} className="bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md text-[10px] font-bold border border-emerald-100 hover:bg-emerald-100">+50</button>
+                      <button onClick={() => handleAdjustScore(u.id, -50)} className="bg-rose-50 text-rose-600 px-2 py-1 rounded-md text-[10px] font-bold border border-rose-100 hover:bg-rose-100">-50</button>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <select 
+                      value={u.role} 
+                      onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                      className="text-sm font-bold bg-white border border-border-dim rounded-lg px-2 py-1 outline-none focus:border-primary cursor-pointer"
+                    >
+                      <option value="student">Student</option>
+                      <option value="mentor">Mentor</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {loading && <div className="py-20 text-center text-text-secondary italic">Updating rankings…</div>}
+        </div>
+      </div>
+    )
+  }
+
+  if (view === 'leaderboard') {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setView('overview')} className="text-primary font-bold hover:underline">← Back to Overview</button>
+          <h2 className="text-2xl font-bold text-text-primary">Leaderboard Control</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="card space-y-4">
+            <h3 className="font-bold text-lg text-text-primary">Force System Sync</h3>
+            <p className="text-sm text-text-secondary">
+              This will trigger a full recalculation of scores for all users in the system. 
+              Use this after updating scoring weights or fixing calculation bugs.
+            </p>
+            <button 
+              onClick={handleRecalculateAll}
+              disabled={loading}
+              className="btn-primary w-full py-3"
+            >
+              {loading ? 'Recalculating...' : 'Recalculate All Scores 🔄'}
+            </button>
+          </div>
+
+          <div className="card space-y-4">
+            <h3 className="font-bold text-lg text-text-primary">Platform Integrity</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-border-dim">
+                <span className="text-sm font-medium text-text-primary">Flagged Accounts</span>
+                <span className="badge">0</span>
+              </div>
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-border-dim">
+                <span className="text-sm font-medium text-text-primary">Pending Verifications</span>
+                <span className="badge">12</span>
+              </div>
+            </div>
+            <p className="text-xs text-text-secondary italic font-medium">Auto-moderation is currently active.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-4xl font-bold text-text-primary text-red-600">
-          Admin Control Panel ⚙️
+        <h1 className="text-4xl font-bold text-text-primary">
+          Admin Control Panel <span className="text-primary">⚙️</span>
         </h1>
         <p className="text-text-secondary mt-2 text-[15px] font-medium">Full access for {user?.name}</p>
       </div>
+
+      {/* Stats Quick Look */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard label="Total Users" value={stats?.total_users} accent="text-primary" highlight />
+        <StatCard label="Hackathons" value={stats?.total_hackathon_results} />
+        <StatCard label="Active Teams" value={stats?.total_teams} />
+        <StatCard label="Announcements" value={stats?.total_announcements} />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="card bg-red-50/50 border-red-100">
+        <button onClick={() => setView('users')} className="card text-left bg-red-50/30 border-red-100 hover:bg-red-50 transition-all group">
+          <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <span className="text-red-600 text-xl">👥</span>
+          </div>
           <h3 className="font-bold text-lg text-red-700">Manage Users</h3>
-          <p className="text-sm mt-2 text-text-secondary">Edit user profiles and modify points.</p>
-        </div>
-        <div className="card bg-blue-50/50 border-blue-100">
+          <p className="text-sm mt-2 text-text-secondary">Edit user profiles, change roles, and modify achievement points.</p>
+          <div className="mt-4 text-xs font-bold text-red-600 uppercase tracking-wider">Open Manager →</div>
+        </button>
+
+        <button className="card text-left bg-blue-50/30 border-blue-100 hover:bg-blue-50 transition-all group opacity-60">
+          <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
+            <span className="text-blue-600 text-xl">🏆</span>
+          </div>
           <h3 className="font-bold text-lg text-blue-700">Manage Hackathons</h3>
-          <p className="text-sm mt-2 text-text-secondary">Add, update, or delete hackathon events.</p>
-        </div>
-        <div className="card bg-purple-50/50 border-purple-100">
+          <p className="text-sm mt-2 text-text-secondary">Add, update, or delete hackathon events and results.</p>
+          <div className="mt-4 text-xs font-bold text-blue-400 uppercase tracking-wider">Coming Soon</div>
+        </button>
+
+        <button onClick={() => setView('leaderboard')} className="card text-left bg-purple-50/30 border-purple-100 hover:bg-purple-50 transition-all group">
+          <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+            <span className="text-purple-600 text-xl">⚡</span>
+          </div>
           <h3 className="font-bold text-lg text-purple-700">Leaderboard Control</h3>
-          <p className="text-sm mt-2 text-text-secondary">Adjust rankings and verify scores manually.</p>
-        </div>
+          <p className="text-sm mt-2 text-text-secondary">Adjust rankings and verify scores manually for platform integrity.</p>
+          <div className="mt-4 text-xs font-bold text-purple-600 uppercase tracking-wider">Open Control →</div>
+        </button>
       </div>
     </div>
   )

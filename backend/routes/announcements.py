@@ -7,6 +7,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, Announcement
 from utils.scoring import update_user_scores
+from utils.auth_middleware import admin_only
 
 announcements_bp = Blueprint("announcements", __name__)
 
@@ -28,6 +29,7 @@ def list_announcements():
 
 @announcements_bp.route("/announcements", methods=["POST"])
 @jwt_required()
+@admin_only
 def create_announcement():
     """
     POST /api/announcements
@@ -76,12 +78,11 @@ def create_announcement():
 
 @announcements_bp.route("/announcements/<post_id>", methods=["DELETE"])
 @jwt_required()
+@admin_only
 def delete_announcement(post_id):
-    """DELETE /api/announcements/<id> — only the author can delete."""
+    """DELETE /api/announcements/<id> — only Admins can delete."""
     user_id = get_jwt_identity()
     post = Announcement.objects(id=post_id).first_or_404()
-    if str(post.author.id) != user_id:
-        return jsonify({"error": "Not authorized"}), 403
     post.delete()
     update_user_scores(user_id)
     return jsonify({"message": "Deleted"}), 200

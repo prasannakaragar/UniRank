@@ -5,6 +5,7 @@ Supports Global, CP, and Hackathon leaderboards.
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, User, Profile, HackathonResult
+from utils.auth_middleware import roles_required
 
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
@@ -33,16 +34,15 @@ def get_leaderboard():
     current_user = User.objects(id=current_user_id).first()
 
     lb_type = request.args.get("type", "cp")
-    scope = request.args.get("scope", "global")
+    scope = request.args.get("scope", "college")
     branch = request.args.get("branch")
     year = request.args.get("year")
 
     # 1. Base User Query (Filtering)
     user_query = User.objects()
-    if scope == "college":
-        domain = current_user.email.split("@")[1] if current_user else ""
-        if domain:
-            user_query = user_query.filter(email__endswith=f"@{domain}")
+    if scope == "college" and current_user:
+        domain = current_user.email.split("@")[1]
+        user_query = user_query.filter(email__endswith=f"@{domain}")
 
     if branch:
         user_query = user_query.filter(branch=branch)
@@ -57,16 +57,7 @@ def get_leaderboard():
     }
     sort_field = sort_map.get(lb_type, "-cp_score")
 
-    # 3. Profile Query
     query = Profile.objects(user__in=user_query)
-    
-    # Optional: Filter out profiles with 0 score for that category
-    if lb_type == "cp":
-        from mongoengine import Q
-        query = query.filter(Q(cf_handle__exists=True, cf_handle__ne="") | Q(lc_username__exists=True, lc_username__ne=""))
-    elif lb_type == "github":
-        query = query.filter(github_total_score__gt=0)
-    
     query = query.order_by(sort_field)
 
     # 4. Pagination
@@ -133,9 +124,11 @@ def get_leaderboard():
 
 @leaderboard_bp.route("/hackathon/result", methods=["POST"])
 @jwt_required()
+@roles_required('admin', 'superadmin', 'reviewer')
 def add_hackathon_result():
     """
     POST /api/hackathon/result
+    (Manual entry by admins, students must use /api/hackathons/submit)
     """
     current_user_id = get_jwt_identity()
     user = User.objects(id=current_user_id).first_or_404()

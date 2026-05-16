@@ -206,9 +206,11 @@ def send_message(conv_id):
 
     data    = request.get_json() or {}
     content = (data.get("content") or "").strip()
-    if not content:
-        return jsonify({"error": "Message content is required"}), 400
-    if len(content) > 4000:
+    media_url = data.get("media_url")
+
+    if not content and not media_url:
+        return jsonify({"error": "Message content or media is required"}), 400
+    if content and len(content) > 4000:
         return jsonify({"error": "Message too long (max 4000 chars)"}), 400
 
     # Resolve @mention user ids
@@ -220,12 +222,14 @@ def send_message(conv_id):
         conversation=conv,
         sender=me,
         text=content,
+        media_url=media_url,
         mentions=mentioned,
     )
     msg.save()
 
     # Update conversation preview + bump unread for everyone else
-    conv.last_message = content[:120] + ("…" if len(content) > 120 else "")
+    preview_text = content if content else "📷 Photo"
+    conv.last_message = preview_text[:120] + ("…" if len(preview_text) > 120 else "")
     conv.last_sender  = me.name
     conv.updated_at   = datetime.utcnow()
     for m in conv.members:
@@ -632,9 +636,67 @@ def delete_conversation(conv_id):
             # If the user leaving was the only admin, appoint someone else
             if member.is_admin and not any(m.is_admin for m in conv.members):
                 conv.members[0].is_admin = True
-            conv.save()
-
     return jsonify({"ok": True}), 200
+
+@chats_bp.route("/chats/<conv_id>", methods=["PATCH"])
+@jwt_required()
+def update_group(conv_id):
+    """Update group name or description. Only for group admins."""
+    uid = get_jwt_identity()
+    conv = Conversation.objects(id=conv_id).first()
+    if not conv or conv.kind != "group":
+        return jsonify({"error": "Group not found"}), 404
+    
+    member = conv.get_member(uid)
+    if not member or not member.is_admin:
+        return jsonify({"error": "Only admins can update group info"}), 403
+    
+    data = request.get_json() or {}
+    if "name" in data:
+        name = data["name"].strip()
+        if name:
+            conv.name = name
+    if "description" in data:
+        conv.description = data["description"].strip()
+    
+    conv.updated_at = datetime.utcnow()
+    conv.save()
+    
+    # Notify members
+    socketio.emit("group_updated", {
+        "conversation_id": conv_id,
+        "name": conv.name,
+        "description": conv.description
+    }, room=conv_id)
+    
+    return jsonify({"conversation": conv.to_dict(viewer_id=uid)}), 200
+
+
+# ── Shared Media ─────────────────────────────────────────────────────────────
+
+@chats_bp.route("/chats/<conv_id>/media", methods=["GET"])
+@jwt_required()
+def get_conversation_media(conv_id):
+    """Return all messages in the conversation that contain media."""
+    uid = get_jwt_identity()
+    conv = Conversation.objects(id=conv_id).first()
+    if not conv or not _is_member(conv, uid):
+        return jsonify({"error": "Conversation not found or access denied"}), 403
+    
+    # Fetch messages with media_url
+    media_msgs = Message.objects(
+        conversation=conv, 
+        media_url__nin=[None, ""]
+    ).order_by("-created_at")
+    
+    results = [{
+        "messageId": str(m.id),
+        "media_url": m.media_url,
+        "sender_name": m.sender.name,
+        "timestamp": m.created_at.isoformat()
+    } for m in media_msgs]
+    
+    return jsonify(results), 200
 
 
 # ── SocketIO Events ──────────────────────────────────────────────────────────

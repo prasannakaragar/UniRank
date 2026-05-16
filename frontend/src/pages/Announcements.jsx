@@ -74,7 +74,7 @@ function AnnouncementListCard({ post, currentUserId, onDelete, onClick }) {
               </span>
             )}
           </div>
-          {post.author_id === currentUserId && (
+          {user?.role === 'admin' && (
             <button
               onClick={e => { e.stopPropagation(); onDelete(post.id) }}
               className="text-text-secondary hover:text-danger transition-colors p-1.5 hover:bg-danger/5 rounded-md"
@@ -226,7 +226,7 @@ function AnnouncementDetail({ post, onClose, currentUserId, onDelete }) {
                   Register Now ↗
                 </a>
               )}
-              {post.author_id === currentUserId && (
+              {user?.role === 'admin' && (
                 <button
                   onClick={() => { onDelete(post.id); onClose() }}
                   className="px-6 py-4 rounded-lg bg-danger/5 text-danger font-bold hover:bg-danger/10 transition-colors"
@@ -373,9 +373,11 @@ export default function Announcements() {
           <h1 className="text-4xl font-bold text-text-primary">Announcements</h1>
           <p className="text-text-secondary text-[15px] mt-2 font-medium">Hackathons, contests & technical opportunities for you.</p>
         </div>
-        <button onClick={() => setShowForm(p => !p)} className={`btn-primary self-start sm:self-auto ${showForm ? 'bg-danger hover:brightness-110' : ''}`}>
-          {showForm ? '✕ Cancel' : '+ Post Opportunity'}
-        </button>
+        {user?.role === 'admin' && (
+          <button onClick={() => setShowForm(p => !p)} className={`btn-primary self-start sm:self-auto ${showForm ? 'bg-danger hover:brightness-110' : ''}`}>
+            {showForm ? '✕ Cancel' : '+ Post Opportunity'}
+          </button>
+        )}
       </div>
 
       {/* Form */}

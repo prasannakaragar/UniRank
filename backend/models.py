@@ -370,6 +370,7 @@ class Message(db.Document):
     conversation            = db.ReferenceField(Conversation, reverse_delete_rule=db.CASCADE, required=True)
     sender                  = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
     text                    = db.StringField(required=True, db_field='content')
+    media_url               = db.StringField()
     status                  = db.StringField(max_length=15, default='sent')  # sent | delivered | seen
     mentions                = db.ListField(db.ReferenceField(User))           # @mentions
     forwarded               = db.BooleanField(default=False)
@@ -390,6 +391,7 @@ class Message(db.Document):
             "senderId":                str(self.sender.id),
             "senderName":              self.sender.name,
             "text":                    "This message was deleted" if self.is_deleted_for_everyone else self.text,
+            "media_url":               self.media_url,
             "status":                  self.status,
             "forwarded":               self.forwarded,
             "isDeletedForEveryone":    self.is_deleted_for_everyone,
@@ -402,6 +404,7 @@ class Message(db.Document):
             "sender_id":               str(self.sender.id),
             "sender_name":             self.sender.name,
             "content":                 "This message was deleted" if self.is_deleted_for_everyone else self.text,
+            "media_url":               self.media_url,
             "is_deleted":              self.is_deleted_for_everyone,
             "created_at":              self.created_at.isoformat(),
         }
@@ -442,4 +445,61 @@ class ProjectReview(db.Document):
             },
             "created_at": self.created_at.isoformat()
         }
+
+
+class HackathonSubmission(db.Document):
+    """
+    Hackathon achievement submission for verification.
+    """
+    meta = {'collection': 'hackathon_submissions'}
+
+    user            = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
+    hackathon_name  = db.StringField(max_length=200, required=True)
+    position        = db.IntField(required=True) # e.g. 1, 2, 3
+    certificate_url = db.StringField(required=True)
+    status          = db.StringField(max_length=20, default='pending') # pending, approved, rejected
+    approvals       = db.ListField(db.ReferenceField(User)) # List of admin/reviewer IDs
+    rejections      = db.ListField(db.ReferenceField(User)) # List of admin/reviewer IDs
+    created_at      = db.DateTimeField(default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user.id),
+            "user_name": self.user.name,
+            "user_college": self.user.college,
+            "hackathon_name": self.hackathon_name,
+            "position": self.position,
+            "certificate_url": self.certificate_url,
+            "status": self.status,
+            "approvals": [str(u.id) for u in self.approvals],
+            "rejections": [str(u.id) for u in self.rejections],
+            "created_at": self.created_at.isoformat()
+        }
+
+class Notification(db.Document):
+    """
+    System notifications for users/admins.
+    """
+    meta = {'collection': 'notifications', 'indexes': ['-created_at', 'recipient']}
+
+    recipient   = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
+    title       = db.StringField(max_length=100, required=True)
+    message     = db.StringField(required=True)
+    type        = db.StringField(max_length=50, default='system')
+    link        = db.StringField()
+    is_read     = db.BooleanField(default=False)
+    created_at  = db.DateTimeField(default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "message": self.message,
+            "type": self.type,
+            "link": self.link,
+            "is_read": self.is_read,
+            "created_at": self.created_at.isoformat()
+        }
+
 

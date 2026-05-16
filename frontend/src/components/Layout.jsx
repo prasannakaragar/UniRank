@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react'
 import api from '../api/axios'
 
 const nav = [
-  { to: '/dashboard',     label: 'Dashboard',     icon: GridIcon },
-  { to: '/leaderboard',   label: 'Leaderboard',   icon: TrophyIcon },
-  { to: '/announcements', label: 'Announcements', icon: MegaphoneIcon },
-  { to: '/teams',         label: 'Teams',         icon: UsersIcon },
-  { to: '/chats',         label: 'Chats',         icon: ChatIcon, badge: true },
-  { to: '/profile',       label: 'My Profile',    icon: UserIcon },
+  { to: '/dashboard',     label: 'Dashboard',     icon: GridIcon, roles: ['student', 'mentor', 'admin'] },
+  { to: '/leaderboard',   label: 'Leaderboard',   icon: TrophyIcon, roles: ['student', 'mentor', 'admin'] },
+  { to: '/announcements', label: 'Announcements', icon: MegaphoneIcon, roles: ['student', 'mentor', 'admin'] },
+  { to: '/teams',         label: 'Teams',         icon: UsersIcon, roles: ['student', 'admin'] }, // Mentors don't need teams
+  { to: '/chats',         label: 'Chats',         icon: ChatIcon, roles: ['student', 'mentor', 'admin'], badge: true },
+  { to: '/profile',       label: 'My Profile',    icon: UserIcon, roles: ['student', 'mentor', 'admin'] },
 ]
 
 export default function Layout() {
@@ -46,7 +46,9 @@ export default function Layout() {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-1">
-          {nav.map(({ to, label, icon: Icon, badge }) => (
+          {nav
+            .filter(item => !item.roles || item.roles.includes(user?.role))
+            .map(({ to, label, icon: Icon, badge }) => (
             <NavLink
               key={to}
               to={to}

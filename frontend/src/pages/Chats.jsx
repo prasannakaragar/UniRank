@@ -72,6 +72,18 @@ export default function Chats() {
   const [groupName, setGroupName]           = useState('')
   const [groupDesc, setGroupDesc]           = useState('')
   const [selectedMembers, setSelectedMembers] = useState([])
+  
+  // Info Panel & Media
+  const [showInfoPanel, setShowInfoPanel] = useState(false)
+  const [sharedMedia, setSharedMedia]     = useState([])
+  const [loadingMedia, setLoadingMedia]   = useState(false)
+  const [lightboxImage, setLightboxImage] = useState(null)
+  const [otherProfile, setOtherProfile]   = useState(null)
+  
+  // Group editing
+  const [editingGroup, setEditingGroup] = useState(false)
+  const [editName, setEditName]         = useState('')
+  const [editDesc, setEditDesc]         = useState('')
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -152,6 +164,15 @@ export default function Chats() {
         }
     })
 
+    socket.on('group_updated', (data) => {
+        setConversations(prev => prev.map(c => 
+            c.id === data.conversation_id ? { ...c, name: data.name, description: data.description } : c
+        ))
+        if (activeConv?.id === data.conversation_id) {
+            setActiveConv(prev => ({ ...prev, name: data.name, description: data.description }))
+        }
+    })
+
     return () => {
       socket.disconnect()
     }
@@ -205,21 +226,77 @@ export default function Chats() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  /* ── info panel data ── */
+  useEffect(() => {
+    if (!activeConv || !showInfoPanel) return
+    
+    // Fetch media
+    setLoadingMedia(true)
+    api.get(`/chats/${activeConv.id}/media`)
+      .then(r => setSharedMedia(r.data || []))
+      .finally(() => setLoadingMedia(false))
+    
+    // If DM, fetch the other user's profile info
+    if (activeConv.kind === 'dm') {
+      const other = activeConv.members?.find(m => m.user_id !== user?.id)
+      if (other) {
+        api.get(`/profile/${other.user_id}`).then(r => setOtherProfile(r.data)).catch(() => {})
+      }
+    } else {
+      setOtherProfile(null)
+    }
+  }, [activeConv?.id, showInfoPanel])
+
+  /* ── escape key to close overlays ── */
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (lightboxImage) setLightboxImage(null)
+        else if (showInfoPanel) setShowInfoPanel(false)
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [lightboxImage, showInfoPanel])
+
   /* ── send message ── */
-  const sendMessage = async (e) => {
+  const sendMessage = async (e, mediaUrl = null) => {
     e?.preventDefault()
     const content = msgInput.trim()
-    if (!content || !activeConv || sending) return
+    if (!content && !mediaUrl || !activeConv || sending) return
     setSending(true)
     try {
-      const r = await api.post(`/chats/${activeConv.id}/messages`, { content })
-      // We don't add to messages state here, we wait for the socket event for consistency
+      await api.post(`/chats/${activeConv.id}/messages`, { 
+        content: content, 
+        media_url: mediaUrl 
+      })
       setMsgInput('')
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to send message')
     } finally {
       setSending(false)
       inputRef.current?.focus()
+    }
+  }
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    try {
+      setSending(true)
+      const res = await api.post('/upload/image', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      // Send message with the uploaded image URL
+      await sendMessage(null, res.data.url)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Upload failed')
+    } finally {
+      setSending(false)
     }
   }
 
@@ -284,6 +361,15 @@ export default function Chats() {
     }
   }
   
+  const saveGroupInfo = async () => {
+    try {
+        await api.patch(`/chats/${activeConv.id}`, { name: editName, description: editDesc })
+        setEditingGroup(false)
+    } catch (err) {
+        alert(err.response?.data?.error || 'Failed to update group')
+    }
+  }
+
   /* ── block user ── */
   const handleBlock = async () => {
     if (activeConv.kind !== 'dm') return
@@ -373,7 +459,25 @@ export default function Chats() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] -mt-10 -mx-10 overflow-hidden bg-white border border-border-dim shadow-card rounded-2xl">
+    <div className="flex h-[calc(100vh-8rem)] -mt-10 -mx-10 overflow-hidden bg-white border border-border-dim shadow-card rounded-2xl relative">
+      
+      {/* Lightbox Overlay */}
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in duration-300"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button className="absolute top-8 right-8 text-white/70 hover:text-white transition-colors">
+            <span className="text-4xl">✕</span>
+          </button>
+          <img 
+            src={lightboxImage} 
+            className="max-w-full max-h-full object-contain shadow-2xl animate-in zoom-in-95 duration-300" 
+            alt="Fullscreen"
+            onClick={e => e.stopPropagation()} 
+          />
+        </div>
+      )}
 
       {/* ══ LEFT: Conversation list ══ */}
       <aside className="w-[320px] bg-white border-r border-border-dim flex flex-col shrink-0">
@@ -510,16 +614,21 @@ export default function Chats() {
           <>
             {/* Thread header */}
             <div className="px-8 py-4 border-b border-border-dim bg-white flex items-center gap-4">
-              {activeConv.kind === 'group' ? (
-                <div className="w-10 h-10 rounded-full bg-gray-50 border border-border-dim flex items-center justify-center">
-                  <UsersIcon size={18} className="text-primary" />
+              <div 
+                className="flex flex-1 items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors -ml-4 pl-4 py-2 rounded-xl"
+                onClick={() => setShowInfoPanel(!showInfoPanel)}
+              >
+                {activeConv.kind === 'group' ? (
+                  <div className="w-10 h-10 rounded-full bg-gray-50 border border-border-dim flex items-center justify-center">
+                    <UsersIcon size={18} className="text-primary" />
+                  </div>
+                ) : (
+                  <Avatar name={convName(activeConv)} size={10} />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-text-primary leading-none truncate">{convName(activeConv)}</p>
+                  <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider mt-1.5">{convSub(activeConv)}</p>
                 </div>
-              ) : (
-                <Avatar name={convName(activeConv)} size={10} />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-text-primary leading-none truncate">{convName(activeConv)}</p>
-                <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider mt-1.5">{convSub(activeConv)}</p>
               </div>
               
               <div className="flex items-center gap-3">
@@ -667,7 +776,17 @@ export default function Chats() {
                                       <ShareIcon size={11} /> FORWARDED
                                   </div>
                               )}
-                              {msg.text}
+                              
+                              {msg.media_url && (
+                                <img 
+                                  src={msg.media_url} 
+                                  className="rounded-lg mb-2 max-w-full cursor-pointer hover:brightness-90 transition-all border border-black/5 shadow-sm" 
+                                  alt="Shared"
+                                  onClick={() => setLightboxImage(msg.media_url)}
+                                />
+                              )}
+                              
+                              {msg.text && <div>{msg.text}</div>}
                             </div>
                           </div>
                           <div className={`flex items-center gap-2 mt-1.5 px-1 ${
@@ -687,6 +806,11 @@ export default function Chats() {
 
             {/* Input bar */}
             <form onSubmit={sendMessage} className="px-6 py-5 border-t border-border-dim bg-white flex items-center gap-4">
+              <label className="w-10 h-10 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors flex items-center justify-center cursor-pointer shrink-0">
+                <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={sending} />
+                <CameraIcon size={18} />
+              </label>
+              
               <input
                 ref={inputRef}
                 className="flex-1 bg-gray-50 border border-border-dim rounded-xl px-6 py-3.5 text-sm text-text-primary placeholder-gray-400 focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all font-medium"
@@ -698,7 +822,7 @@ export default function Chats() {
               />
               <button
                 type="submit"
-                disabled={!msgInput.trim() || sending}
+                disabled={(!msgInput.trim() && !sending) || sending}
                 className="w-12 h-12 rounded-xl bg-primary text-white hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center active:scale-95 shadow-md"
               >
                 <SendIcon size={20} />
@@ -707,6 +831,139 @@ export default function Chats() {
           </>
         )}
       </main>
+
+      {/* ══ RIGHT: Info Panel ══ */}
+      {showInfoPanel && activeConv && (
+        <aside className="w-[340px] bg-white border-l border-border-dim flex flex-col shrink-0 animate-in slide-in-from-right duration-300">
+          <div className="px-6 py-5 border-b border-border-dim flex items-center justify-between bg-white sticky top-0 z-10">
+            <h3 className="font-bold text-text-primary uppercase tracking-widest text-[11px]">Chat Info</h3>
+            <button 
+              onClick={() => setShowInfoPanel(false)}
+              className="w-8 h-8 rounded-lg hover:bg-gray-100 text-text-secondary transition-colors"
+            >✕</button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {/* Header / Avatar */}
+            <div className="flex flex-col items-center py-10 px-8 text-center border-b border-dashed border-border-dim">
+              {activeConv.kind === 'dm' ? (
+                <>
+                  <div className="w-24 h-24 rounded-full bg-primary/5 border-2 border-primary/20 flex items-center justify-center mb-4 overflow-hidden shadow-lg">
+                    {otherProfile?.avatar_url ? (
+                      <img src={otherProfile.avatar_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-3xl font-black text-primary">{convName(activeConv)[0]}</span>
+                    )}
+                  </div>
+                  <h4 className="text-xl font-bold text-text-primary">{convName(activeConv)}</h4>
+                  <p className="text-sm font-medium text-text-secondary mt-1">{otherProfile?.cf_handle ? `@${otherProfile.cf_handle}` : ''}</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <span className="px-3 py-1 rounded-full bg-gray-100 text-[10px] font-bold text-text-secondary border border-border-dim uppercase tracking-wider">
+                      {convSub(activeConv).replace('·', '|')}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-24 h-24 rounded-2xl bg-primary text-white flex items-center justify-center mb-4 shadow-lg text-4xl">
+                    <UsersIcon size={40} />
+                  </div>
+                  {editingGroup ? (
+                    <div className="space-y-3 w-full">
+                      <input 
+                        className="input text-center font-bold" 
+                        value={editName} 
+                        onChange={e => setEditName(e.target.value)} 
+                        placeholder="Group Name"
+                      />
+                      <textarea 
+                        className="input text-center text-sm min-h-[80px]" 
+                        value={editDesc} 
+                        onChange={e => setEditDesc(e.target.value)} 
+                        placeholder="Description"
+                      />
+                      <div className="flex gap-2">
+                        <button onClick={saveGroupInfo} className="btn-primary flex-1 py-2 text-xs">SAVE</button>
+                        <button onClick={() => setEditingGroup(false)} className="btn-secondary flex-1 py-2 text-xs">CANCEL</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xl font-bold text-text-primary">{activeConv.name}</h4>
+                        {activeConv.members?.find(m => m.user_id === user?.id)?.is_admin && (
+                          <button 
+                            onClick={() => { setEditName(activeConv.name); setEditDesc(activeConv.description || ''); setEditingGroup(true) }}
+                            className="text-text-secondary hover:text-primary transition-colors"
+                          >
+                            <EditIcon size={14} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium text-text-secondary mt-2 max-w-[200px] leading-relaxed italic">{activeConv.description || 'No description set'}</p>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Group Members List */}
+            {activeConv.kind === 'group' && (
+              <div className="p-6 border-b border-dashed border-border-dim">
+                <div className="flex items-center justify-between mb-4">
+                  <h5 className="section-label">MEMBERS ({activeConv.members?.length})</h5>
+                </div>
+                <div className="space-y-3">
+                  {activeConv.members?.map(m => (
+                    <div key={m.user_id} className="flex items-center gap-3">
+                      <Avatar name={m.name} size={8} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-bold text-text-primary truncate">{m.name}</p>
+                        <p className="text-[11px] text-text-secondary font-medium truncate">{m.branch} · Y{m.year}</p>
+                      </div>
+                      {m.is_admin && (
+                        <span className="text-[9px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 uppercase tracking-tighter">Admin</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Shared Media */}
+            <div className="p-6">
+              <h5 className="section-label mb-4">SHARED MEDIA</h5>
+              
+              {loadingMedia ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className="aspect-square bg-gray-100 rounded-lg animate-pulse border border-border-dim" />
+                  ))}
+                </div>
+              ) : sharedMedia.length === 0 ? (
+                <div className="bg-gray-50 rounded-xl py-10 px-6 text-center border border-border-dim border-dashed">
+                  <p className="text-xs font-bold text-text-secondary/50 italic">No media shared yet</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {sharedMedia.map(m => (
+                    <div 
+                      key={m.messageId} 
+                      className="aspect-square rounded-lg overflow-hidden border border-border-dim bg-gray-100 cursor-pointer hover:brightness-75 transition-all group relative"
+                      onClick={() => setLightboxImage(m.media_url)}
+                    >
+                      <img src={m.media_url} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
+                        <span className="text-[8px] text-white font-bold truncate">{m.sender_name}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
+      )}
 
       {/* ══ Forward Picker Modal ══ */}
       {showForwardPicker && (
@@ -864,6 +1121,13 @@ function ShareIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+    </svg>
+  )
+}
+function CameraIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
     </svg>
   )
 }

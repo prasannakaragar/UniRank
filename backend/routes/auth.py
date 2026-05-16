@@ -23,7 +23,7 @@ def is_college_email(email):
     Rule: Must contain '.edu' OR match a domain in our 'colleges' collection.
     """
     domain = email.split("@")[-1].lower()
-    if ".edu" in domain:
+    if ".edu" in domain or ".ac.in" in domain:
         return True
     # Check if domain exists in the colleges collection
     if College.objects(domain=domain).first():

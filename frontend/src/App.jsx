@@ -53,11 +53,18 @@ export default function App() {
           <Route path="/dashboard"     element={<Dashboard />} />
           <Route path="/leaderboard"   element={<Leaderboard />} />
           <Route path="/announcements" element={<Announcements />} />
-          <Route path="/teams"         element={<Teams />} />
+          <Route path="/teams"         element={
+            <RoleRoute allowedRoles={['student', 'admin']}>
+              <Teams />
+            </RoleRoute>
+          } />
           <Route path="/chats"         element={<Chats />} />
           <Route path="/profile"       element={<Profile />} />
           <Route path="/profile/:id"   element={<Profile />} />
         </Route>
+
+        {/* Catch-all or 404 could go here */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </AuthProvider>
   )

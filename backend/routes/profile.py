@@ -124,15 +124,35 @@ def get_following(uid):
 
 
 @profile_bp.route("/profile", methods=["PUT"])
+@profile_bp.route("/profile/<uid>", methods=["PUT"])
 @jwt_required()
-def update_profile():
+def update_profile(uid=None):
     """
-    PUT /api/profile
+    PUT /api/profile or /api/profile/<uid>
     """
-    user_id = get_jwt_identity()
+    current_user_id = get_jwt_identity()
+    target_user_id = uid if uid else current_user_id
+    
+    # Fetch requester
+    requester = User.objects(id=current_user_id).first_or_404()
+    
+    # Mentor Role Restriction
+    if requester.role == 'mentor':
+        return jsonify({"error": "Mentors cannot edit profiles"}), 403
+        
+    # Permission Check: Only owner or Admin can edit
+    if str(target_user_id) != str(current_user_id) and requester.role != 'admin':
+        return jsonify({"error": "Not authorized to edit this profile"}), 403
+
     data = request.get_json()
-    user = User.objects(id=user_id).first_or_404()
+    user = User.objects(id=target_user_id).first_or_404()
     profile = Profile.objects(user=user).first_or_404()
+
+    # Admin only fields (if any, e.g. role, verification)
+    if requester.role == 'admin':
+        if "role" in data and data["role"] in ['student', 'mentor', 'admin']:
+            user.role = data["role"]
+            user.save()
 
     updatable = ["cf_handle", "lc_username", "bio", "skills", "github_url", "linkedin_url"]
     for field in updatable:
@@ -168,7 +188,7 @@ def update_profile():
             profile.github_review_reason = analysis["reason"]
 
     profile.save()
-    update_user_scores(user_id)
+    update_user_scores(str(user.id))
     return jsonify({"message": "Profile updated", "profile": profile.to_dict()}), 200
 
 

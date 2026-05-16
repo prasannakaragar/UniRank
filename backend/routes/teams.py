@@ -4,8 +4,9 @@ Team formation board — students signal availability or recruit members.
 """
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, TeamPost
+from models import db, TeamPost, User
 from utils.scoring import update_user_scores
+from utils.auth_middleware import roles_required
 
 teams_bp = Blueprint("teams", __name__)
 
@@ -27,6 +28,7 @@ def list_teams():
 
 @teams_bp.route("/teams", methods=["POST"])
 @jwt_required()
+@roles_required('student', 'admin')
 def create_team_post():
     """
     POST /api/teams
@@ -39,7 +41,6 @@ def create_team_post():
     if not data.get("title"):
         return jsonify({"error": "'title' is required"}), 400
 
-    from models import User
     author = User.objects(id=user_id).first_or_404()
 
     skills = data.get("skills_needed", "")
@@ -63,24 +64,30 @@ def create_team_post():
 @teams_bp.route("/teams/<post_id>", methods=["DELETE"])
 @jwt_required()
 def delete_team_post(post_id):
-    """DELETE /api/teams/<id> — author only."""
+    """DELETE /api/teams/<id> — author or Admin."""
     user_id = get_jwt_identity()
+    requester = User.objects(id=user_id).first_or_404()
     post = TeamPost.objects(id=post_id).first_or_404()
-    if str(post.author.id) != user_id:
+    
+    if str(post.author.id) != user_id and requester.role != 'admin':
         return jsonify({"error": "Not authorized"}), 403
+        
     post.delete()
-    update_user_scores(user_id)
+    update_user_scores(str(post.author.id))
     return jsonify({"message": "Deleted"}), 200
 
 
 @teams_bp.route("/teams/<post_id>/close", methods=["PATCH"])
 @jwt_required()
 def close_team_post(post_id):
-    """PATCH /api/teams/<id>/close — mark post as inactive (team found)."""
+    """PATCH /api/teams/<id>/close — author or Admin."""
     user_id = get_jwt_identity()
+    requester = User.objects(id=user_id).first_or_404()
     post = TeamPost.objects(id=post_id).first_or_404()
-    if str(post.author.id) != user_id:
+    
+    if str(post.author.id) != user_id and requester.role != 'admin':
         return jsonify({"error": "Not authorized"}), 403
+        
     post.is_active = False
     post.save()
     return jsonify({"message": "Post marked as closed"}), 200

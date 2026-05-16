@@ -75,7 +75,7 @@ export default function Leaderboard() {
           </p>
         </div>
         <div className="flex gap-3">
-          {user?.role === 'faculty' && (
+          {user?.role === 'admin' && (
             <button onClick={() => setShowModal(true)} className="btn-primary py-2.5">
               + Add Result
             </button>

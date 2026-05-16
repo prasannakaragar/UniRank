@@ -63,7 +63,7 @@ export default function Profile() {
 
   // Hackathon form state
   const [showHForm, setShowHForm] = useState(false)
-  const [hForm, setHForm] = useState({ hackathon_name: '', position: 0, points: 0 })
+  const [hForm, setHForm] = useState({ hackathon_name: '', position: 0 })
 
   const fetchProfile = () => {
     const endpoint = id ? `/profile/${id}` : '/profile'
@@ -141,9 +141,10 @@ export default function Profile() {
   const handleAddHackathon = async (e) => {
     e.preventDefault()
     try {
-      await api.post('/hackathon/result', hForm)
-      setHForm({ hackathon_name: '', position: 0, points: 0 })
+      await api.post('/hackathons/submit', { ...hForm, certificate_url: 'pending_upload' })
+      setHForm({ hackathon_name: '', position: 0 })
       setShowHForm(false)
+      alert('Achievement request submitted to admins for review.')
       fetchProfile()
       refreshUser()
     } catch (err) {
@@ -389,18 +390,13 @@ export default function Profile() {
                   <input className="input" required placeholder="e.g. Smart India Hackathon 2024"
                     value={hForm.hackathon_name} onChange={e => setHForm(p => ({ ...p, hackathon_name: e.target.value }))} />
                 </div>
-                <div>
-                  <label className="section-label block mb-2">Position (0 for Participation)</label>
-                  <input className="input" type="number"
-                    value={hForm.position} onChange={e => setHForm(p => ({ ...p, position: parseInt(e.target.value) }))} />
-                </div>
-                <div>
-                  <label className="section-label block mb-2">Points Awarded</label>
-                  <input className="input" type="number" required
-                    value={hForm.points} onChange={e => setHForm(p => ({ ...p, points: parseInt(e.target.value) }))} />
+                <div className="md:col-span-2">
+                  <label className="section-label block mb-2">Rank (e.g., 1 for 1st Place)</label>
+                  <input className="input" type="number" required min="1"
+                    value={hForm.position || ''} onChange={e => setHForm(p => ({ ...p, position: parseInt(e.target.value) || 0 }))} />
                 </div>
               </div>
-              <button type="submit" className="btn-primary w-full py-4 font-bold">Save Achievement</button>
+              <button type="submit" className="btn-primary w-full py-4 font-bold">Submit Request</button>
             </form>
           )}
 

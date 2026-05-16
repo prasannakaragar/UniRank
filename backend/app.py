@@ -20,6 +20,8 @@ from routes.announcements import announcements_bp
 from routes.teams import teams_bp
 from routes.chats import chats_bp
 from routes.uploads import uploads_bp
+from routes.admin import admin_bp
+from routes.hackathons import hackathons_bp
 from socket_io import socketio
 
 load_dotenv()
@@ -85,7 +87,7 @@ def create_app():
     app.limiter = limiter
 
     # ── Blueprints (all under /api prefix) ─────────────────────────────────
-    for bp in [auth_bp, profile_bp, leaderboard_bp, announcements_bp, teams_bp, chats_bp, uploads_bp]:
+    for bp in [auth_bp, profile_bp, leaderboard_bp, announcements_bp, teams_bp, chats_bp, uploads_bp, admin_bp, hackathons_bp]:
         app.register_blueprint(bp, url_prefix="/api")
 
     # ── Serve uploaded images ───────────────────────────────────────────────
