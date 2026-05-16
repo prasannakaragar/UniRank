@@ -3,17 +3,6 @@ app.py — UniRank Flask Backend
 Entry point. Registers all blueprints and initializes extensions.
 Run: python app.py
 """
-# ── Flask 3.x compatibility patch for flask-mongoengine 1.0.0 ──
-# Fix #1: JSONEncoder/JSONDecoder removed from flask.json in Flask 2.3+
-import json
-import flask.json
-if not hasattr(flask.json, 'JSONEncoder'):
-    flask.json.JSONEncoder = json.JSONEncoder
-if not hasattr(flask.json, 'JSONDecoder'):
-    flask.json.JSONDecoder = json.JSONDecoder
-# Fix #2: app.json_encoder removed from Flask 2.3+; neutralize the setter
-import flask_mongoengine.json as _fme_json
-_fme_json.override_json_encoder = lambda app: None
 
 import os
 from flask import Flask
