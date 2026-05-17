@@ -10,10 +10,21 @@ from utils.auth_middleware import roles_required
 leaderboard_bp = Blueprint("leaderboard", __name__)
 
 
-def get_lb_cache_key():
-    """Generate a unique cache key based on query params."""
+def get_lb_cache_key(current_user=None):
+    """Generate a unique cache key based on query params and user college if scope is college."""
     args = request.args
-    key = f"lb_{args.get('type','cp')}_{args.get('scope','global')}_{args.get('college','')}_{args.get('branch','')}_{args.get('year','')}"
+    scope = args.get("scope", "global")
+    
+    # Crucial: Include the user's specific college domain if scope is college
+    # to avoid different colleges sharing the same cache key.
+    college_domain = ""
+    if scope == "college" and current_user:
+        try:
+            college_domain = current_user.email.split("@")[1].strip().lower()
+        except Exception:
+            pass
+            
+    key = f"lb_{args.get('type','cp')}_{scope}_{college_domain}_{args.get('branch','')}_{args.get('year','')}"
     return key
 
 
@@ -21,43 +32,60 @@ def get_lb_cache_key():
 @jwt_required()
 def get_leaderboard():
     """
-    GET /api/leaderboard?type=cp|hackathon|github&scope=global|college
+    GET /api/leaderboard?type=cp|hackathon|github|overall&scope=global|college
     """
+    current_user_id = get_jwt_identity()
+    current_user = User.objects(id=current_user_id).first()
+
     cache = current_app.cache
-    cache_key = get_lb_cache_key()
+    cache_key = get_lb_cache_key(current_user)
     
     cached_data = cache.get(cache_key)
     if cached_data:
         return jsonify(cached_data), 200
 
-    current_user_id = get_jwt_identity()
-    current_user = User.objects(id=current_user_id).first()
-
     lb_type = request.args.get("type", "cp")
-    scope = request.args.get("scope", "college")
+    scope = request.args.get("scope", "global") # Default to global to show all colleges
     branch = request.args.get("branch")
     year = request.args.get("year")
 
     # 1. Base User Query (Filtering)
     user_query = User.objects()
+    needs_user_filter = False
+
     if scope == "college" and current_user:
-        domain = current_user.email.split("@")[1]
-        user_query = user_query.filter(email__endswith=f"@{domain}")
+        try:
+            domain = current_user.email.split("@")[1].strip().lower()
+            user_query = user_query.filter(email__endswith=f"@{domain}")
+            needs_user_filter = True
+        except Exception:
+            pass
 
     if branch:
         user_query = user_query.filter(branch=branch)
+        needs_user_filter = True
     if year:
         user_query = user_query.filter(year=int(year))
+        needs_user_filter = True
 
     # 2. Map LB Type to Sort Field
     sort_map = {
         "cp": "-cp_score",
         "hackathon": "-hackathon_score",
-        "github": "-github_total_score"
+        "github": "-github_total_score",
+        "overall": "-global_score",
+        "global": "-global_score"
     }
     sort_field = sort_map.get(lb_type, "-cp_score")
 
-    query = Profile.objects(user__in=user_query)
+    # 3. Query Profiles
+    # OPTIMIZATION: If no user filters are applied, query Profile.objects() directly.
+    # This prevents slow and buggy `__in` subqueries for global un-filtered leaderboards.
+    if needs_user_filter:
+        query = Profile.objects(user__in=user_query)
+    else:
+        query = Profile.objects()
+
     query = query.order_by(sort_field)
 
     # 4. Pagination
@@ -69,16 +97,22 @@ def get_leaderboard():
     profiles = query.skip(skip).limit(per_page)
     leaderboard = []
 
-    # 5. Build Result (Rank is skip + index)
+    # 5. Build Result
     for idx, p in enumerate(profiles):
         rank = skip + idx + 1
         user = p.user
+        
+        # Guard against profile reference pointing to deleted user
+        if not user:
+            continue
+
         entry = {
             "rank": rank,
             "user_id": str(user.id),
             "name": user.name,
             "branch": user.branch,
             "year": user.year,
+            "college": user.college,  # Add college name!
             "avatar_url": p.avatar_url,
         }
 
@@ -107,6 +141,14 @@ def get_leaderboard():
                 "github_work_score": p.github_work_score,
                 "github_total_score": p.github_total_score,
                 "github_review_reason": p.github_review_reason
+            })
+        elif lb_type in ["overall", "global"]:
+            entry.update({
+                "score": round(p.global_score, 1),
+                "global_score": round(p.global_score, 1),
+                "cp_score": round(p.cp_score, 1),
+                "hackathon_score": p.hackathon_score,
+                "github_score": round(p.github_total_score, 1)
             })
         
         leaderboard.append(entry)

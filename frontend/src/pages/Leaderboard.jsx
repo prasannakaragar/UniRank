@@ -218,7 +218,9 @@ export default function Leaderboard() {
                             <Link to={`/profile/${entry.user_id}`} className={`text-[15px] font-bold hover:underline ${isMe ? 'text-primary' : 'text-text-primary'}`}>
                               {entry.name} {isMe && <span className="text-xs ml-1">(YOU)</span>}
                             </Link>
-                            <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider">Year {entry.year}</p>
+                            <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider">
+                              Year {entry.year} {entry.college && `• ${entry.college}`}
+                            </p>
                           </div>
                         </div>
                       </td>
