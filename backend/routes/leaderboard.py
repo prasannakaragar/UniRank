@@ -50,23 +50,20 @@ def get_leaderboard():
     year = request.args.get("year")
 
     # 1. Base User Query (Filtering)
-    user_query = User.objects()
-    needs_user_filter = False
+    # Filter by role="student" to only show students on the leaderboard.
+    user_query = User.objects(role="student")
 
     if scope == "college" and current_user:
         try:
             domain = current_user.email.split("@")[1].strip().lower()
             user_query = user_query.filter(email__endswith=f"@{domain}")
-            needs_user_filter = True
         except Exception:
             pass
 
     if branch:
         user_query = user_query.filter(branch=branch)
-        needs_user_filter = True
     if year:
         user_query = user_query.filter(year=int(year))
-        needs_user_filter = True
 
     # 2. Map LB Type to Sort Field
     sort_map = {
@@ -79,13 +76,10 @@ def get_leaderboard():
     sort_field = sort_map.get(lb_type, "-cp_score")
 
     # 3. Query Profiles
-    # OPTIMIZATION: If no user filters are applied, query Profile.objects() directly.
-    # This prevents slow and buggy `__in` subqueries for global un-filtered leaderboards.
-    if needs_user_filter:
-        query = Profile.objects(user__in=user_query)
-    else:
-        query = Profile.objects()
-
+    # Always query profiles bound to our student user_query.
+    # This prevents orphaned profiles, limits entries to active student accounts,
+    # and keeps the global and college scopes perfectly aligned.
+    query = Profile.objects(user__in=user_query)
     query = query.order_by(sort_field)
 
     # 4. Pagination
@@ -106,13 +100,20 @@ def get_leaderboard():
         if not user:
             continue
 
+        college_display = user.college
+        if not college_display or college_display.strip().lower() == "unknown":
+            try:
+                college_display = user.email.split("@")[1].strip().upper()
+            except Exception:
+                college_display = "Unknown"
+
         entry = {
             "rank": rank,
             "user_id": str(user.id),
             "name": user.name,
             "branch": user.branch,
             "year": user.year,
-            "college": user.college,  # Add college name!
+            "college": college_display,
             "avatar_url": p.avatar_url,
         }
 
