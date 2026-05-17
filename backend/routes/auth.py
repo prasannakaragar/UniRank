@@ -50,6 +50,8 @@ def register():
     Body: { name, email, password, branch, year }
     """
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
     required = ["name", "email", "password", "branch", "year", "college"]
 
     for field in required:
@@ -118,6 +120,8 @@ def resend_otp():
     POST /api/resend-otp
     """
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
     email = (data.get("email") or "").strip().lower()
 
     pending_user = PendingUser.objects(email=email).first()
@@ -145,6 +149,8 @@ def verify_otp():
     Body: { email, otp }
     """
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
     email = (data.get("email") or "").strip().lower()
     otp = (data.get("otp") or "").strip()
 
@@ -202,6 +208,8 @@ def login():
     Body: { email, password }
     """
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing request body"}), 400
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
 

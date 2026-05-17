@@ -9,7 +9,7 @@ Production: gunicorn --worker-class eventlet -w 1 "app:create_app()" --bind 0.0.
 import os
 import socket as _socket
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
@@ -131,6 +131,18 @@ def create_app():
     @app.route("/")
     def index():
         return {"message": "UniRank API is running. Use /api/* endpoints."}, 200
+
+    # ── Global Error Handler for Debugging 500s ──────────────────────────────
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        import traceback
+        app.logger.error(f"Unhandled Exception: {str(e)}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({
+            "error": "Internal Server Error",
+            "details": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
     return app
 
