@@ -152,7 +152,7 @@ def verify_otp():
     if not data:
         return jsonify({"error": "Missing request body"}), 400
     email = (data.get("email") or "").strip().lower()
-    otp = (data.get("otp") or "").strip()
+    otp = str(data.get("otp") or "").strip()
 
     if not email or not otp:
         return jsonify({"error": "Email and OTP are required"}), 400

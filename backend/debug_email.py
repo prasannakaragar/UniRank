@@ -17,15 +17,18 @@ def test_production_email():
     recipient = sys.argv[1]
     otp = "123456"
 
+    print("--- Brevo API Diagnostic ---")
     print(f"Testing production OTP delivery to: {recipient}")
-    print(f"Using Sender: {os.getenv('GMAIL_USER')}")
+    print(f"Using Sender: {os.getenv('BREVO_SENDER', 'learnitfast6@gmail.com')}")
+    print(f"API Key present: {'YES' if os.getenv('BREVO_API_KEY') else 'NO'}")
+    print("-----------------------------")
     
     success = send_otp_email(recipient, otp)
     
     if success:
-        print("SUCCESS: The email was sent successfully!")
+        print("SUCCESS: The email was sent successfully via Brevo API!")
     else:
-        print("FAILED: Check your .env credentials.")
+        print("FAILED: Check your .env credentials and BREVO_API_KEY.")
 
 if __name__ == "__main__":
     test_production_email()
