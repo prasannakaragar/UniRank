@@ -7,27 +7,38 @@ export function AuthProvider({ children }) {
   const [user, setUser]     = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // On mount, check if a token exists and fetch user profile
   useEffect(() => {
     const token = localStorage.getItem('token')
+    const savedUser = localStorage.getItem('auth_user')
+    
     if (!token) { setLoading(false); return }
 
+    if (savedUser) {
+      setUser(JSON.parse(savedUser))
+    }
+
     api.get('/profile')
-      .then(res => setUser(res.data))
-      .catch(() => localStorage.removeItem('token'))
+      .then(res => {
+        setUser(res.data)
+        localStorage.setItem('auth_user', JSON.stringify(res.data))
+      })
+      .catch(() => {
+        localStorage.removeItem('token')
+        localStorage.removeItem('auth_user')
+      })
       .finally(() => setLoading(false))
   }, [])
 
   const login = async (email, password) => {
     const res = await api.post('/login', { email, password })
     localStorage.setItem('token', res.data.token)
+    localStorage.setItem('auth_user', JSON.stringify(res.data.user))
     setUser(res.data.user)
     return res.data.user
   }
 
   const register = async (payload) => {
     const res = await api.post('/register', payload)
-    // No longer auto-login — user must verify OTP first
     return res.data
   }
 
@@ -35,6 +46,7 @@ export function AuthProvider({ children }) {
     const res = await api.post('/verify-otp', { email, otp })
     if (res.data.token && res.data.user) {
       localStorage.setItem('token', res.data.token)
+      localStorage.setItem('auth_user', JSON.stringify(res.data.user))
       setUser(res.data.user)
     }
     return res.data
@@ -47,6 +59,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('auth_user')
     setUser(null)
   }
 
