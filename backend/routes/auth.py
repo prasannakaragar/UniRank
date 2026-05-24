@@ -36,9 +36,29 @@ def get_college_name(domain):
     college = College.objects(domain=domain).first()
     if college:
         return college.name
-    # Fallback: capitalize the first part of domain (e.g. rvce.edu.in -> Rvce)
+    # Fallback: capitalize the first part of domain (e.g. rvce.edu.in -> RVCE)
     parts = domain.split(".")
-    return parts[0].capitalize() if parts else "Unknown"
+    return parts[0].upper() if parts else "Unknown"
+
+
+def ensure_college_exists(email):
+    """
+    Given a user's email, checks if their college domain already exists.
+    If not, auto-creates a College entry derived from the domain name.
+    Returns the college name string.
+    """
+    domain = email.split("@")[-1].lower()
+    college = College.objects(domain=domain).first()
+    if college:
+        return college.name  # College already known — return name directly
+
+    # New domain detected — auto-register it
+    parts = domain.split(".")
+    # Build a readable name: e.g. "bmsce.ac.in" -> "BMSCE"
+    college_name = parts[0].upper()
+    College(name=college_name, domain=domain).save()
+    print(f"[AutoRegister] New college added: {college_name} ({domain})")
+    return college_name
 
 
 # ── Signup ────────────────────────────────────────────────────────────────────
@@ -176,16 +196,21 @@ def verify_otp():
         pending_user.save()
         return jsonify({"error": "Invalid OTP"}), 401
 
-    # Success: Create the user
+    # Success: Auto-detect / auto-register the college from the email domain
+    # If the college already exists → returns its stored name
+    # If it's a brand-new domain → creates the College record and returns the name
+    # Either way, the second student from the same domain gets matched automatically
+    college_name = ensure_college_exists(pending_user.email)
+
     user = User(
         name=pending_user.name,
         email=pending_user.email,
         password=pending_user.password,
         branch=pending_user.branch,
         year=pending_user.year,
-        college=pending_user.college,
+        college=college_name,   # Always uses the canonical DB-stored college name
         is_verified=True,
-        college_verified=True # Any college email verified via OTP is trusted
+        college_verified=True
     )
     user.save()
     Profile(user=user).save()

@@ -34,6 +34,10 @@ def seed_colleges():
             {"name": "IIT Patna", "domain": "iitp.ac.in"},
             {"name": "IIT Gandhinagar", "domain": "iitgn.ac.in"},
             {"name": "IIT Bhubaneswar", "domain": "iitbbs.ac.in"},
+            {"name": "REVA University", "domain": "reva.edu.in"},
+            {"name": "BMS College of Engineering", "domain": "bmsce.ac.in"},
+            {"name": "RV College of Engineering", "domain": "rvce.edu.in"},
+            {"name": "PES University", "domain": "pes.edu"},
         ]
         
         for c in colleges:

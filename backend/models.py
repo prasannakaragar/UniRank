@@ -503,3 +503,50 @@ class Notification(db.Document):
         }
 
 
+class Issue(db.Document):
+    """
+    Platform issues reported by users.
+    """
+    meta = {'collection': 'issues', 'indexes': ['-created_at', 'status']}
+
+    title       = db.StringField(max_length=200, required=True)
+    description = db.StringField(required=True)
+    status      = db.StringField(max_length=20, default='open') # open, resolved
+    reported_by = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
+    created_at  = db.DateTimeField(default=datetime.utcnow)
+    resolved_at = db.DateTimeField()
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "reported_by": self.reported_by.name if self.reported_by else "Unknown",
+            "created_at": self.created_at.isoformat(),
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None
+        }
+
+
+class AdminLog(db.Document):
+    """
+    Log of admin actions for auditing.
+    """
+    meta = {'collection': 'admin_logs', 'indexes': ['-timestamp']}
+
+    admin_id       = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
+    action         = db.StringField(max_length=100, required=True)
+    target_user_id = db.StringField(max_length=100) # User ID that was affected
+    details        = db.StringField()
+    timestamp      = db.DateTimeField(default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "admin": self.admin_id.name if self.admin_id else "Unknown",
+            "action": self.action,
+            "target_user_id": self.target_user_id,
+            "details": self.details,
+            "timestamp": self.timestamp.isoformat()
+        }
+

@@ -239,6 +239,18 @@ function AdminDashboard() {
   const [stats, setStats] = useState(null)
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(false)
+  const [collegeSearch, setCollegeSearch] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [collegeSuggestions, setCollegeSuggestions] = useState([])
+
+  const fetchColleges = async (q) => {
+    try {
+      const res = await api.get(`/admin/colleges/search?q=${encodeURIComponent(q)}`)
+      setCollegeSuggestions(res.data.colleges || [])
+    } catch (err) {
+      console.error("Failed to fetch colleges", err)
+    }
+  }
 
   useEffect(() => {
     if (view === 'overview') {
@@ -285,9 +297,61 @@ function AdminDashboard() {
   if (view === 'users') {
     return (
       <div className="space-y-6 animate-in fade-in duration-300">
-        <div className="flex items-center justify-between">
-          <button onClick={() => setView('overview')} className="text-primary font-bold hover:underline">← Back to Overview</button>
-          <h2 className="text-2xl font-bold text-text-primary">Manage Users & Scores</h2>
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <button onClick={() => setView('overview')} className="text-primary font-bold hover:underline mb-2 block">← Back to Overview</button>
+            <h2 className="text-2xl font-bold text-text-primary">Manage Users & Scores</h2>
+          </div>
+          <div className="relative w-full md:w-72">
+            <input 
+              className="w-full border border-border-dim rounded-lg px-4 py-2 text-sm outline-none focus:border-primary shadow-sm"
+              placeholder="Search by college (Type 'All' for all users)"
+              value={collegeSearch}
+              onChange={(e) => {
+                const val = e.target.value
+                setCollegeSearch(val)
+                setShowSuggestions(true)
+                fetchColleges(val)
+              }}
+              onFocus={() => {
+                setShowSuggestions(true)
+                fetchColleges(collegeSearch)
+              }}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            />
+            {showSuggestions && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border-dim rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+                {(!collegeSearch || "all users".includes(collegeSearch.toLowerCase()) || collegeSearch.toLowerCase() === 'all') && (
+                  <div 
+                    className="px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 text-text-primary font-medium border-b border-gray-100"
+                    onMouseDown={() => {
+                      setCollegeSearch('All')
+                      setShowSuggestions(false)
+                    }}
+                  >
+                    All Users
+                  </div>
+                )}
+                {collegeSuggestions.map(c => (
+                  <div 
+                    key={c.domain || c.name}
+                    className="px-4 py-2 text-sm cursor-pointer hover:bg-gray-50 text-text-primary"
+                    onMouseDown={() => {
+                      setCollegeSearch(c.name)
+                      setShowSuggestions(false)
+                    }}
+                  >
+                    {c.name}
+                  </div>
+                ))}
+                {collegeSuggestions.length === 0 && collegeSearch && collegeSearch.toLowerCase() !== 'all' && (
+                  <div className="px-4 py-2 text-xs text-text-secondary italic text-center">
+                    No matching colleges found
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="card overflow-hidden p-0">
           <table className="w-full text-left border-collapse">
@@ -295,30 +359,33 @@ function AdminDashboard() {
               <tr>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Name / Email</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Academic</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Score</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Adjust</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-text-secondary">Role</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border-dim">
-              {users.map(u => (
+              {users.filter(u => {
+                const search = collegeSearch.trim().toLowerCase();
+                if (!search || search === 'all' || search === 'all users') return true;
+                
+                // Try exact match first
+                const exactMatchExists = users.some(user => user.college && user.college.toLowerCase() === search);
+                if (exactMatchExists) {
+                  return u.college && u.college.toLowerCase() === search;
+                }
+                
+                // Otherwise, fall back to case-insensitive substring match
+                return u.college && u.college.toLowerCase().includes(search);
+              }).map(u => (
                 <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-4">
-                    <p className="font-bold text-text-primary">{u.name}</p>
-                    <p className="text-xs text-text-secondary font-medium">{u.email}</p>
+                    <Link to={`/profile/${u.id}`} className="block hover:opacity-80">
+                      <p className="font-bold text-text-primary hover:text-primary transition-colors">{u.name}</p>
+                      <p className="text-xs text-text-secondary font-medium">{u.email}</p>
+                    </Link>
                   </td>
                   <td className="px-6 py-4">
                     <p className="text-sm font-medium text-text-primary">{u.branch}</p>
                     <p className="text-xs text-text-secondary">Year {u.year}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-extrabold text-primary">{u.global_score.toFixed(1)}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button onClick={() => handleAdjustScore(u.id, 50)} className="bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md text-[10px] font-bold border border-emerald-100 hover:bg-emerald-100">+50</button>
-                      <button onClick={() => handleAdjustScore(u.id, -50)} className="bg-rose-50 text-rose-600 px-2 py-1 rounded-md text-[10px] font-bold border border-rose-100 hover:bg-rose-100">-50</button>
-                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <select 
