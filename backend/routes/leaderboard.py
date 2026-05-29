@@ -141,7 +141,9 @@ def get_leaderboard():
                 "github_imp_score": p.github_imp_score,
                 "github_work_score": p.github_work_score,
                 "github_total_score": p.github_total_score,
-                "github_review_reason": p.github_review_reason
+                "github_review_reason": p.github_review_reason,
+                "github_username": p.github_username or "",
+                "github_rank": p.github_rank or ""
             })
         elif lb_type in ["overall", "global"]:
             entry.update({

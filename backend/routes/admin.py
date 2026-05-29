@@ -200,16 +200,64 @@ def edit_student(user_id):
     if not profile:
         return jsonify({"error": "Profile not found"}), 404
         
+    import datetime
+    from utils.codeforces import sync_user_stats
+    from utils.leetcode import sync_leetcode_stats
+
     if "github_url" in data:
         profile.github_url = data["github_url"]
+        if data["github_url"]:
+            from utils.github_ai import analyze_github_profile
+            analysis = analyze_github_profile(data["github_url"])
+            if analysis:
+                profile.github_impl_score = analysis["implementation"]
+                profile.github_imp_score = analysis["impact"]
+                profile.github_work_score = analysis["working"]
+                profile.github_total_score = analysis["total"]
+                profile.github_review_reason = analysis["reason"]
+        else:
+            profile.github_impl_score = 0.0
+            profile.github_imp_score = 0.0
+            profile.github_work_score = 0.0
+            profile.github_total_score = 0.0
+            profile.github_review_reason = ""
+
     if "lc_username" in data:
         profile.lc_username = data["lc_username"]
+        if data["lc_username"]:
+            stats = sync_leetcode_stats(data["lc_username"])
+            if stats:
+                profile.lc_rating          = stats.get("lc_rating", 0)
+                profile.lc_max_rating      = stats.get("lc_max_rating", 0)
+                profile.lc_rank            = stats.get("lc_rank", 0)
+                profile.lc_problems_solved = stats.get("lc_problems_solved", 0)
+        else:
+            profile.lc_rating          = 0
+            profile.lc_max_rating      = 0
+            profile.lc_rank            = 0
+            profile.lc_problems_solved = 0
+
     if "cf_handle" in data:
         profile.cf_handle = data["cf_handle"]
+        if data["cf_handle"]:
+            stats = sync_user_stats(data["cf_handle"])
+            profile.cf_rating          = stats.get("cf_rating", 0)
+            profile.cf_max_rating      = stats.get("cf_max_rating", 0)
+            profile.cf_rank            = stats.get("cf_rank", "unrated")
+            profile.cf_problems_solved = stats.get("cf_problems_solved", 0)
+            profile.avatar_url         = stats.get("avatar_url")
+        else:
+            profile.cf_rating          = 0
+            profile.cf_max_rating      = 0
+            profile.cf_rank            = "unrated"
+            profile.cf_problems_solved = 0
+            profile.avatar_url         = None
         
-    import datetime
     profile.last_synced = datetime.datetime.utcnow()
     profile.save()
+    
+    # Recalculate leaderboard scores immediately
+    update_user_scores(str(user.id))
     
     # Log action
     AdminLog(

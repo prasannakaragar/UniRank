@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import GitHubScoreCard from '../components/GitHubScoreCard'
 
 const RANK_COLORS = {
   'legendary grandmaster': '#ff0000', 'international grandmaster': '#ff0000',
@@ -86,9 +87,12 @@ export default function Profile() {
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true); setMsg(null)
     try {
-      await api.put('/profile', form)
+      const endpoint = isOwnProfile ? '/profile' : `/profile/${id}`
+      await api.put(endpoint, form)
       await fetchProfile()
-      await refreshUser()
+      if (isOwnProfile) {
+        await refreshUser()
+      }
       setEditing(false)
       setMsg({ type: 'ok', text: 'Profile updated successfully!' })
     } catch {
@@ -97,6 +101,24 @@ export default function Profile() {
       setSaving(false)
     }
   }
+
+  const handleGithubScore = useCallback(async ({ score, rank, username, impl, working, impact }) => {
+    try {
+      const endpoint = isOwnProfile ? '/profile' : `/profile/${id}`
+      await api.put(endpoint, {
+        ...form,
+        github_score: score,
+        github_rank: rank,
+        github_username: username,
+        github_impl: impl,
+        github_working: working,
+        github_impact: impact,
+      })
+      await fetchProfile()
+    } catch {
+      // silently ignore — score is still shown locally
+    }
+  }, [form, isOwnProfile, id])
 
   const handleSync = async () => {
     setSyncing(true); setMsg(null)
@@ -254,19 +276,22 @@ export default function Profile() {
 
       {/* Tabs */}
       <div className="flex gap-2">
-        {['overview', 'achievements', 'settings'].map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all border ${
-              activeTab === tab 
-                ? 'bg-text-primary text-white border-text-primary shadow-lg' 
-                : 'bg-white text-text-secondary border-border-dim hover:border-gray-300'
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
+        {['overview', 'achievements', 'settings'].map(tab => {
+          if (tab === 'settings' && !isOwnProfile && currentUser?.role !== 'admin') return null
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest transition-all border ${
+                activeTab === tab 
+                  ? 'bg-text-primary text-white border-text-primary shadow-lg' 
+                  : 'bg-white text-text-secondary border-border-dim hover:border-gray-300'
+              }`}
+            >
+              {tab}
+            </button>
+          )
+        })}
       </div>
 
       {activeTab === 'overview' && (
@@ -286,31 +311,14 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* GitHub Analysis */}
-          {profile.github_analysis?.total > 0 && (
-            <div className="card p-8 md:col-span-2 border-primary/20 bg-accent-pill">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h3 className="text-xl font-bold text-text-primary uppercase tracking-tight">GITHUB EXPERT ANALYSIS</h3>
-                  <p className="text-text-secondary text-xs font-bold mt-1">Calculated via AI assessment of implementation & impact.</p>
-                </div>
-                <div className="bg-white px-6 py-4 rounded-2xl border border-primary/20 shadow-sm text-center">
-                  <p className="text-3xl font-black text-primary">{profile.github_analysis.total.toFixed(1)}</p>
-                  <p className="text-[10px] font-black text-text-secondary uppercase mt-1">TOTAL SCORE</p>
-                </div>
-              </div>
-              
-              <div className="bg-white/80 backdrop-blur p-6 rounded-2xl border border-primary/10 mb-8 italic text-gray-600 text-sm leading-relaxed">
-                "{profile.github_analysis.reason}"
-              </div>
-
-              <div className="grid grid-cols-3 gap-6">
-                <ScoreBadge label="IMPL" score={profile.github_analysis.implementation} color="blue" />
-                <ScoreBadge label="IMPACT" score={profile.github_analysis.impact} color="purple" />
-                <ScoreBadge label="FUNC" score={profile.github_analysis.working} color="emerald" />
-              </div>
-            </div>
-          )}
+          {/* GitHub Score Card */}
+          <div className="md:col-span-2">
+            <GitHubScoreCard
+              initialUsername={profile.github_url || profile.github_username || ''}
+              onScoreCalculated={isOwnProfile ? handleGithubScore : undefined}
+              isOwnProfile={isOwnProfile}
+            />
+          </div>
 
           {/* Individual platform cards */}
           <div className="card p-8">
@@ -427,7 +435,7 @@ export default function Profile() {
         </div>
       )}
 
-      {activeTab === 'settings' && (
+      {activeTab === 'settings' && (isOwnProfile || currentUser?.role === 'admin') && (
         <div className="card p-10">
           <h2 className="text-2xl font-bold text-text-primary mb-10">Profile Settings</h2>
           <form onSubmit={handleSave} className="space-y-10">

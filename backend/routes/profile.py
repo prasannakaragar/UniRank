@@ -177,6 +177,18 @@ def update_profile(uid=None):
             profile.lc_problems_solved = stats.get("lc_problems_solved", 0)
             profile.last_synced        = datetime.utcnow()
 
+    # ── Accept GitHub Score Card results directly (bypasses old AI analysis) ──
+    if "github_score" in data:
+        profile.github_total_score = float(data.get("github_score", 0))
+        profile.github_impl_score  = float(data.get("github_impl",  0))
+        profile.github_imp_score   = float(data.get("github_impact", 0))
+        profile.github_work_score  = float(data.get("github_working", 0))
+        if "github_rank"     in data: profile.github_rank     = data["github_rank"]
+        if "github_username" in data: profile.github_username = data["github_username"]
+        profile.save()
+        update_user_scores(str(user.id))
+        return jsonify({"message": "GitHub score saved", "profile": profile.to_dict()}), 200
+
     if data.get("github_url"):
         from utils.github_ai import analyze_github_profile
         analysis = analyze_github_profile(data["github_url"])

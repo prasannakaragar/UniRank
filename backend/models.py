@@ -117,14 +117,16 @@ class Profile(db.Document):
     bio                = db.StringField(max_length=300)
     skills             = db.StringField(max_length=300)   # comma-separated
     github_url         = db.StringField(max_length=200)
+    github_username    = db.StringField(max_length=100, default="")  # clean GH username
+    github_rank        = db.StringField(max_length=30,  default="")  # Elite/Advanced/etc
     linkedin_url       = db.StringField(max_length=200)
     last_synced        = db.DateTimeField()
-    
+
     # Social
     followers          = db.ListField(db.ReferenceField(User))
     following          = db.ListField(db.ReferenceField(User))
 
-    # GitHub Analysis (Review)
+    # GitHub Score Card scores (set by frontend GitHubScoreCard component)
     github_impl_score    = db.FloatField(default=0.0)
     github_imp_score     = db.FloatField(default=0.0)
     github_work_score    = db.FloatField(default=0.0)
@@ -154,6 +156,8 @@ class Profile(db.Document):
             "bio": self.bio,
             "skills": self.skills.split(",") if self.skills else [],
             "github_url": self.github_url,
+            "github_username": self.github_username or "",
+            "github_rank": self.github_rank or "",
             "linkedin_url": self.linkedin_url,
             "followers_count": len(self.followers),
             "following_count": len(self.following),
@@ -161,13 +165,19 @@ class Profile(db.Document):
             "hackathon_score": self.hackathon_score,
             "activity_score": self.activity_score,
             "global_score": self.global_score,
+            # Legacy field kept for backward compat
             "github_analysis": {
                 "implementation": self.github_impl_score,
                 "impact": self.github_imp_score,
                 "working": self.github_work_score,
                 "total": self.github_total_score,
                 "reason": self.github_review_reason
-            }
+            },
+            # Flat fields used by leaderboard
+            "github_score": self.github_total_score,
+            "github_impl_score": self.github_impl_score,
+            "github_imp_score": self.github_imp_score,
+            "github_work_score": self.github_work_score,
         }
 
 
