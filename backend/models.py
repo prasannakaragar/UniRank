@@ -92,6 +92,7 @@ class Profile(db.Document):
     """
     meta = {
         'collection': 'profiles',
+        'strict': False,
         'indexes': [
             'user',
             '-global_score',
@@ -109,6 +110,7 @@ class Profile(db.Document):
     cf_max_rating      = db.IntField(default=0)
     cf_rank            = db.StringField(max_length=50, default="unrated")
     cf_problems_solved = db.IntField(default=0)
+    cf_contests        = db.IntField(default=0)
     lc_rating          = db.IntField(default=0)
     lc_max_rating      = db.IntField(default=0)
     lc_rank            = db.IntField(default=0)
@@ -132,6 +134,9 @@ class Profile(db.Document):
     github_work_score    = db.FloatField(default=0.0)
     github_total_score   = db.FloatField(default=0.0)
     github_review_reason = db.StringField(default="")
+    github_repos         = db.IntField(default=0)
+    github_stars         = db.IntField(default=0)
+    github_commits       = db.IntField(default=0)
 
     # Cached scores for leaderboards
     cp_score             = db.FloatField(default=0.0)
@@ -148,6 +153,7 @@ class Profile(db.Document):
             "cf_max_rating": self.cf_max_rating,
             "cf_rank": self.cf_rank,
             "cf_problems_solved": self.cf_problems_solved,
+            "cf_contests": self.cf_contests,
             "lc_rating": self.lc_rating,
             "lc_max_rating": self.lc_max_rating,
             "lc_rank": self.lc_rank,
@@ -158,6 +164,9 @@ class Profile(db.Document):
             "github_url": self.github_url,
             "github_username": self.github_username or "",
             "github_rank": self.github_rank or "",
+            "github_repos": self.github_repos,
+            "github_stars": self.github_stars,
+            "github_commits": self.github_commits,
             "linkedin_url": self.linkedin_url,
             "followers_count": len(self.followers),
             "following_count": len(self.following),

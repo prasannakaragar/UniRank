@@ -55,11 +55,27 @@ def get_problems_solved(handle: str) -> int:
         return 0
 
 
+def get_user_contests(handle: str) -> int:
+    """
+    Fetch user contests count from Codeforces.
+    """
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        resp = requests.get(f"{CF_BASE}/user.rating", params={"handle": handle}, headers=headers, timeout=8)
+        data = resp.json()
+        if data.get("status") != "OK":
+            return 0
+        return len(data.get("result", []))
+    except Exception:
+        return 0
+
+
 def sync_user_stats(handle: str) -> dict:
     """
-    Combine get_user_info + get_problems_solved into a single call.
+    Combine get_user_info + get_problems_solved + get_user_contests into a single call.
     Returns a dict ready to update the Profile model.
     """
     info = get_user_info(handle) or {}
     problems = get_problems_solved(handle)
-    return {**info, "cf_problems_solved": problems}
+    contests = get_user_contests(handle)
+    return {**info, "cf_problems_solved": problems, "cf_contests": contests}

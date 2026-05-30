@@ -9,6 +9,7 @@ from models import db, User, Profile
 from utils.codeforces import sync_user_stats
 from utils.leetcode import sync_leetcode_stats
 from utils.scoring import update_user_scores
+from utils.github_stats import get_github_stats
 
 profile_bp = Blueprint("profile", __name__)
 
@@ -189,33 +190,31 @@ def update_profile(uid=None):
         update_user_scores(str(user.id))
         return jsonify({"message": "GitHub score saved", "profile": profile.to_dict()}), 200
 
-    if data.get("github_url"):
-        from utils.github_ai import analyze_github_profile
-        analysis = analyze_github_profile(data["github_url"])
-        if analysis:
-            profile.github_impl_score = analysis["implementation"]
-            profile.github_imp_score = analysis["impact"]
-            profile.github_work_score = analysis["working"]
-            profile.github_total_score = analysis["total"]
-            profile.github_review_reason = analysis["reason"]
-
     profile.save()
     update_user_scores(str(user.id))
     return jsonify({"message": "Profile updated", "profile": profile.to_dict()}), 200
 
 
 @profile_bp.route("/profile/sync", methods=["POST"])
+@profile_bp.route("/profile/refresh/<uid>", methods=["POST"])
 @jwt_required()
-def sync_profiles():
+def refresh_profile(uid=None):
     """
-    POST /api/profile/sync — Manual refresh for both Codeforces and LeetCode.
+    POST /api/profile/sync (self)
+    POST /api/profile/refresh/<uid> (any user)
+    Manual refresh for GitHub, Codeforces, and LeetCode stats with a 30s cooldown.
     """
-    user_id = get_jwt_identity()
-    user = User.objects(id=user_id).first_or_404()
+    current_user_id = get_jwt_identity()
+    target_user_id = uid if uid else current_user_id
+    
+    user = User.objects(id=target_user_id).first_or_404()
     profile = Profile.objects(user=user).first_or_404()
 
-    if not profile.cf_handle and not profile.lc_username:
-        return jsonify({"error": "No handles set. Update your profile first."}), 400
+    # Cooldown Check (30 seconds)
+    if profile.last_synced:
+        elapsed = (datetime.utcnow() - profile.last_synced).total_seconds()
+        if elapsed < 30:
+            return jsonify({"error": f"Please wait {int(30 - elapsed)} seconds before refreshing again."}), 429
 
     if profile.cf_handle:
         cf_stats = sync_user_stats(profile.cf_handle)
@@ -223,7 +222,9 @@ def sync_profiles():
         profile.cf_max_rating      = cf_stats.get("cf_max_rating", 0)
         profile.cf_rank            = cf_stats.get("cf_rank", "unrated")
         profile.cf_problems_solved = cf_stats.get("cf_problems_solved", 0)
-        profile.avatar_url         = cf_stats.get("avatar_url")
+        profile.cf_contests        = cf_stats.get("cf_contests", 0)
+        if cf_stats.get("avatar_url"):
+            profile.avatar_url     = cf_stats.get("avatar_url")
 
     if profile.lc_username:
         lc_stats = sync_leetcode_stats(profile.lc_username)
@@ -233,18 +234,31 @@ def sync_profiles():
             profile.lc_rank            = lc_stats.get("lc_rank", 0)
             profile.lc_problems_solved = lc_stats.get("lc_problems_solved", 0)
 
-    if profile.github_url:
-        from utils.github_ai import analyze_github_profile
-        analysis = analyze_github_profile(profile.github_url)
-        if analysis:
-            profile.github_impl_score = analysis["implementation"]
-            profile.github_imp_score = analysis["impact"]
-            profile.github_work_score = analysis["working"]
-            profile.github_total_score = analysis["total"]
-            profile.github_review_reason = analysis["reason"]
+    # Fetch GitHub stats
+    gh_username = profile.github_username
+    if not gh_username and profile.github_url:
+        import re
+        match = re.search(r'github\.com/([^/]+)', profile.github_url)
+        if match:
+            gh_username = match.group(1)
+            profile.github_username = gh_username
+            
+    if gh_username:
+        from utils.github_stats import get_github_stats, calculate_github_score
+        gh_stats = get_github_stats(gh_username)
+        profile.github_repos = gh_stats.get("github_repos", 0)
+        profile.github_stars = gh_stats.get("github_stars", 0)
+        profile.github_commits = gh_stats.get("github_commits", 0)
+        
+        scores = calculate_github_score(gh_stats)
+        profile.github_impl_score = scores["github_impl"]
+        profile.github_work_score = scores["github_working"]
+        profile.github_imp_score = scores["github_impact"]
+        profile.github_total_score = scores["github_score"]
+        profile.github_rank = scores["github_rank"]
 
     profile.last_synced = datetime.utcnow()
     profile.save()
-    update_user_scores(user_id)
+    update_user_scores(str(user.id))
 
-    return jsonify({"message": "Synced successfully", "profile": profile.to_dict()}), 200
+    return jsonify({"message": "Profile refreshed successfully", "profile": profile.to_dict()}), 200

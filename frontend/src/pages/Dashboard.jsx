@@ -314,7 +314,20 @@ function AdminDashboard() {
       api.get('/admin/stats').then(r => setStats(r.data)).catch(() => {})
     } else if (view === 'users') {
       setLoading(true)
-      api.get('/admin/users').then(r => setUsers(r.data.users)).finally(() => setLoading(false))
+      api.get('/admin/users')
+        .then(r => {
+          if (r.data && Array.isArray(r.data.users)) {
+            setUsers(r.data.users)
+          } else {
+            setUsers([])
+            console.error("Unexpected API response format:", r.data)
+          }
+        })
+        .catch(err => {
+          console.error("Failed to fetch users:", err)
+          alert("Failed to load users: " + (err.response?.data?.error || err.message))
+        })
+        .finally(() => setLoading(false))
     }
   }, [view])
 
@@ -342,7 +355,9 @@ function AdminDashboard() {
       await api.post('/admin/recalculate')
       alert('Global score recalculation complete!')
       api.get('/admin/stats').then(r => setStats(r.data))
-      if (view === 'users') api.get('/admin/users').then(r => setUsers(r.data.users))
+      if (view === 'users') {
+        api.get('/admin/users').then(r => setUsers(r.data?.users || []))
+      }
     } catch (err) {
       alert('Recalculation failed')
     } finally {
@@ -427,12 +442,12 @@ function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-dim">
-              {users.filter(u => {
-                const search = collegeSearch.trim().toLowerCase()
+              {(users || []).filter(u => {
+                const search = (collegeSearch || '').trim().toLowerCase()
                 if (!search || search === 'all' || search === 'all users') return true
-                const exactMatchExists = users.some(user => user.college && user.college.toLowerCase() === search)
-                if (exactMatchExists) return u.college && u.college.toLowerCase() === search
-                return u.college && u.college.toLowerCase().includes(search)
+                const exactMatchExists = (users || []).some(user => user?.college && user.college.toLowerCase() === search)
+                if (exactMatchExists) return u?.college && u.college.toLowerCase() === search
+                return u?.college && u.college.toLowerCase().includes(search)
               }).map(u => (
                 <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-6 py-4">

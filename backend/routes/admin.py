@@ -35,7 +35,10 @@ def get_users():
             "branch": u.branch,
             "year": u.year,
             "college": u.college,
-            "global_score": profile.global_score if profile else 0
+            "global_score": profile.global_score if profile else 0,
+            "cf_handle": profile.cf_handle if profile else "",
+            "lc_username": profile.lc_username if profile else "",
+            "github_url": profile.github_url if profile else ""
         })
     return jsonify({"users": user_list}), 200
 
@@ -206,16 +209,7 @@ def edit_student(user_id):
 
     if "github_url" in data:
         profile.github_url = data["github_url"]
-        if data["github_url"]:
-            from utils.github_ai import analyze_github_profile
-            analysis = analyze_github_profile(data["github_url"])
-            if analysis:
-                profile.github_impl_score = analysis["implementation"]
-                profile.github_imp_score = analysis["impact"]
-                profile.github_work_score = analysis["working"]
-                profile.github_total_score = analysis["total"]
-                profile.github_review_reason = analysis["reason"]
-        else:
+        if not data["github_url"]:
             profile.github_impl_score = 0.0
             profile.github_imp_score = 0.0
             profile.github_work_score = 0.0

@@ -102,32 +102,15 @@ export default function Profile() {
     }
   }
 
-  const handleGithubScore = useCallback(async ({ score, rank, username, impl, working, impact }) => {
-    try {
-      const endpoint = isOwnProfile ? '/profile' : `/profile/${id}`
-      await api.put(endpoint, {
-        ...form,
-        github_score: score,
-        github_rank: rank,
-        github_username: username,
-        github_impl: impl,
-        github_working: working,
-        github_impact: impact,
-      })
-      await fetchProfile()
-    } catch {
-      // silently ignore — score is still shown locally
-    }
-  }, [form, isOwnProfile, id])
-
   const handleSync = async () => {
     setSyncing(true); setMsg(null)
     try {
-      await api.post('/profile/sync')
+      const endpoint = id ? `/profile/refresh/${id}` : '/profile/sync'
+      await api.post(endpoint)
       await fetchProfile()
-      setMsg({ type: 'ok', text: 'Statistics synced with external platforms!' })
+      setMsg({ type: 'ok', text: 'Profile refreshed successfully!' })
     } catch (err) {
-      setMsg({ type: 'err', text: err.response?.data?.error || 'Sync failed.' })
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Refresh failed.' })
     } finally {
       setSyncing(false)
     }
@@ -242,24 +225,34 @@ export default function Profile() {
 
             {profile.bio && <p className="text-gray-600 text-[15px] mt-6 leading-relaxed border-l-4 border-primary/10 pl-4">{profile.bio}</p>}
             
-            <div className="flex gap-4 mt-8">
+            <div className="flex gap-4 mt-8 flex-wrap">
               {isOwnProfile ? (
                 <>
                   <button onClick={() => { setEditing(true); setMsg(null) }} className="btn-primary px-8 py-3">Edit Profile</button>
                   <button onClick={handleSync} disabled={syncing} className="bg-gray-100 text-gray-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 transition-all flex items-center gap-2">
-                    {syncing ? '⟳ SYNCING...' : '⟳ SYNC STATS'}
+                    {syncing ? '⟳ REFRESHING...' : '⟳ REFRESH PROFILE'}
                   </button>
                 </>
               ) : (
-                <button onClick={handleFollowToggle} className={`px-8 py-3 rounded-xl font-bold transition-all ${
-                  profile.is_following 
-                    ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-200' 
-                    : 'btn-primary'
-                }`}>
-                  {profile.is_following ? 'Following' : 'Follow'}
-                </button>
+                <>
+                  <button onClick={handleFollowToggle} className={`px-8 py-3 rounded-xl font-bold transition-all ${
+                    profile.is_following 
+                      ? 'bg-gray-100 text-gray-700 hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-200' 
+                      : 'btn-primary'
+                  }`}>
+                    {profile.is_following ? 'Following' : 'Follow'}
+                  </button>
+                  <button onClick={handleSync} disabled={syncing} className="bg-gray-100 text-gray-700 px-6 py-3 rounded-xl font-bold hover:bg-gray-200 transition-all flex items-center gap-2">
+                    {syncing ? '⟳ REFRESHING...' : '⟳ REFRESH PROFILE'}
+                  </button>
+                </>
               )}
             </div>
+            {profile.last_synced && (
+              <p className="text-xs text-text-secondary mt-3 font-medium">
+                Last updated: {new Date(profile.last_synced).toLocaleString()}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -313,11 +306,7 @@ export default function Profile() {
 
           {/* GitHub Score Card */}
           <div className="md:col-span-2">
-            <GitHubScoreCard
-              initialUsername={profile.github_url || profile.github_username || ''}
-              onScoreCalculated={isOwnProfile ? handleGithubScore : undefined}
-              isOwnProfile={isOwnProfile}
-            />
+            <GitHubScoreCard profile={profile} />
           </div>
 
           {/* Individual platform cards */}
@@ -339,6 +328,10 @@ export default function Profile() {
                 <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
                   <span className="text-sm font-bold text-text-secondary">PROBLEMS SOLVED</span>
                   <span className="text-sm font-black text-text-primary">{profile.cf_problems_solved || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">CONTESTS</span>
+                  <span className="text-sm font-black text-text-primary">{profile.cf_contests || 0}</span>
                 </div>
                 <div className="flex justify-between items-center py-4">
                   <span className="text-sm font-bold text-text-secondary">MAX RATING</span>
@@ -376,6 +369,35 @@ export default function Profile() {
               </div>
             ) : (
               <p className="text-text-secondary text-sm font-medium italic py-10 text-center">No handle connected.</p>
+            )}
+          </div>
+
+          <div className="card p-8">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="section-label">GITHUB STATS</h3>
+              {profile.github_username && (
+                <a href={`https://github.com/${profile.github_username}`} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">
+                  @{profile.github_username} ↗
+                </a>
+              )}
+            </div>
+            {profile.github_username ? (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">PUBLIC REPOSITORIES</span>
+                  <span className="text-sm font-black text-text-primary">{profile.github_repos || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">TOTAL STARS</span>
+                  <span className="text-sm font-black text-text-primary">{profile.github_stars || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4">
+                  <span className="text-sm font-bold text-text-secondary">TOTAL COMMITS</span>
+                  <span className="text-sm font-black text-text-primary">{profile.github_commits || 0}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-text-secondary text-sm font-medium italic py-10 text-center">No GitHub connected.</p>
             )}
           </div>
         </div>
