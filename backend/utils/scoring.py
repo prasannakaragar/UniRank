@@ -32,7 +32,7 @@ def update_user_scores(user_id):
                    (profile.lc_rating / 10.0) + (profile.lc_problems_solved * 0.1)
     
     # GitHub Portfolio Component (Bonus for analyzed projects)
-    github_component = profile.github_total_score * 5.0
+    github_component = user.github_score * 5.0
     
     global_score = cp_component + (hackathon_score * 1.5) + activity_score + github_component
     

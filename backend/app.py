@@ -12,10 +12,12 @@ import socket as _socket
 from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
 from dotenv import load_dotenv
+from datetime import timedelta
 
 from models import db
 from routes.auth import auth_bp
@@ -36,11 +38,18 @@ def create_app():
     app = Flask(__name__)
 
     # ── Configuration ──────────────────────────────────────────────────────
-    app.config["SECRET_KEY"]    = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "jwt-secret-change-in-prod")
+    app.config["SECRET_KEY"]       = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    app.config["JWT_SECRET_KEY"]   = os.getenv("JWT_SECRET_KEY", "jwt-secret-change-in-prod")
+    # JWT tokens expire in 7 days (no refresh-token system currently).
+    # Shorten to 1 hour + add refresh tokens if/when the frontend supports it.
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=7)
     app.config["MONGODB_SETTINGS"] = {
         "host": os.getenv("MONGO_URI", "mongodb://localhost:27017/unirank")
     }
+    # Bcrypt work factor — 12 is OWASP-recommended minimum for 2024.
+    # Increment to 13-14 as hardware improves (each +1 doubles compute time).
+    app.config["BCRYPT_LOG_ROUNDS"] = int(os.getenv("BCRYPT_LOG_ROUNDS", 12))
+
 
     # ── CORS ───────────────────────────────────────────────────────────────
     # FIX: Collect all allowed origins; filter out None values safely.
@@ -66,6 +75,12 @@ def create_app():
     # ── Extensions ─────────────────────────────────────────────────────────
     db.init_app(app)
     JWTManager(app)
+
+    # Initialise the shared Bcrypt instance used by utils/password.py.
+    # This ensures all bcrypt calls respect BCRYPT_LOG_ROUNDS from config.
+    from utils.password import bcrypt as _pw_bcrypt
+    _pw_bcrypt.init_app(app)
+    Bcrypt(app)   # also keeps routes/auth.py backward-compatible
 
     # ── SocketIO ───────────────────────────────────────────────────────────
     # FIX: pass cors_allowed_origins so Socket.IO connections aren't blocked
@@ -132,17 +147,19 @@ def create_app():
     def index():
         return {"message": "UniRank API is running. Use /api/* endpoints."}, 200
 
-    # ── Global Error Handler for Debugging 500s ──────────────────────────────
+    # ── Global Error Handler ──────────────────────────────────────────────
     @app.errorhandler(Exception)
     def handle_exception(e):
         import traceback
-        app.logger.error(f"Unhandled Exception: {str(e)}")
-        app.logger.error(traceback.format_exc())
-        return jsonify({
-            "error": "Internal Server Error",
-            "details": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
+        tb = traceback.format_exc()
+        app.logger.error("Unhandled Exception: %s\n%s", str(e), tb)
+        # In production, NEVER expose stack traces to the client.
+        is_debug = app.debug or os.getenv("FLASK_ENV") == "development"
+        body = {"error": "Internal server error."}
+        if is_debug:
+            body["details"]   = str(e)
+            body["traceback"] = tb
+        return jsonify(body), 500
 
     return app
 

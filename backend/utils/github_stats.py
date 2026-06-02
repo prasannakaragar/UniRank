@@ -100,7 +100,7 @@ def calculate_github_score(stats: dict) -> dict:
     
     impact = min(impact, 10.0)
 
-    total = (impl + working + impact) / 3.0
+    total = round((impl + working + impact) / 3.0, 2)
 
     rank = "Starter"
     if total >= 9: rank = "Elite"
@@ -112,6 +112,6 @@ def calculate_github_score(stats: dict) -> dict:
         "github_impl": round(impl, 1),
         "github_working": round(working, 1),
         "github_impact": round(impact, 1),
-        "github_score": round(total, 1),
+        "github_score": total,
         "github_rank": rank
     }

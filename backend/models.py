@@ -22,6 +22,7 @@ class PendingUser(db.Document):
     """
     meta = {
         'collection': 'pending_users',
+        'strict': False,
         'indexes': [
             {'fields': ['otp_expiry'], 'expireAfterSeconds': 0}
         ]
@@ -46,6 +47,7 @@ class User(db.Document):
     """
     meta = {
         'collection': 'users',
+        'strict': False,
         'indexes': [
             'email',
             'branch',
@@ -66,8 +68,21 @@ class User(db.Document):
     college_verified = db.BooleanField(default=False)
     otp_hash         = db.StringField()
     otp_expiry       = db.DateTimeField()
-    attempts         = db.IntField(default=0)
+    attempts         = db.IntField(default=0)  # OTP attempts during registration
     created_at       = db.DateTimeField(default=datetime.utcnow)
+
+    # ── Account-lockout fields (login brute-force protection) ───────────────
+    # failed_login_attempts: incremented on each bad password; reset on success
+    # locked_until: None = not locked; datetime = locked until that UTC time
+    failed_login_attempts = db.IntField(default=0)
+    locked_until          = db.DateTimeField()  # None means account is not locked
+
+    # ── Persistent GitHub scoring fields ────────────────────────────────────
+    github_implementation = db.FloatField(default=0.0)
+    github_working        = db.FloatField(default=0.0)
+    github_impact         = db.FloatField(default=0.0)
+    github_score          = db.FloatField(default=0.0)
+    last_github_refresh   = db.DateTimeField()
 
     def to_dict(self):
         # Fetch hackathon results and profile (simulating relationships)
@@ -82,7 +97,18 @@ class User(db.Document):
             "role": self.role,
             "is_verified": self.is_verified,
             "college_verified": self.college_verified,
-            "hackathon_results": [h.to_dict() for h in results]
+            "hackathon_results": [h.to_dict() for h in results],
+            # Persistent GitHub fields
+            "github_implementation": self.github_implementation,
+            "github_working": self.github_working,
+            "github_impact": self.github_impact,
+            "github_score": self.github_score,
+            "last_github_refresh": self.last_github_refresh.isoformat() if self.last_github_refresh else None,
+            # Legacy mapping for frontend compatibility
+            "github_impl_score": self.github_implementation,
+            "github_work_score": self.github_working,
+            "github_imp_score": self.github_impact,
+            "github_total_score": self.github_score,
         }
 
 

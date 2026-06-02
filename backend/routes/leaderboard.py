@@ -86,75 +86,109 @@ def get_leaderboard():
     page = max(1, int(request.args.get("page", 1)))
     per_page = min(100, int(request.args.get("per_page", 50)))
     skip = (page - 1) * per_page
-    total_count = query.count()
 
-    profiles = query.skip(skip).limit(per_page)
-    leaderboard = []
-
-    # 5. Build Result
-    for idx, p in enumerate(profiles):
-        rank = skip + idx + 1
-        user = p.user
+    if lb_type == "github":
+        # Sort users using User.objects.order_by("-github_score")
+        user_query = user_query.order_by("-github_score")
+        total_count = user_query.count()
+        users = user_query.skip(skip).limit(per_page)
         
-        # Guard against profile reference pointing to deleted user
-        if not user:
-            continue
+        # Prefetch profiles for these users to optimize performance
+        profiles_dict = {str(p.user.id): p for p in Profile.objects(user__in=users)}
+        
+        leaderboard = []
+        for idx, user in enumerate(users):
+            rank = skip + idx + 1
+            p = profiles_dict.get(str(user.id))
+            if not p:
+                p = Profile(user=user)
+                
+            college_display = user.college
+            if not college_display or college_display.strip().lower() == "unknown":
+                try:
+                    college_display = user.email.split("@")[1].strip().upper()
+                except Exception:
+                    college_display = "Unknown"
 
-        college_display = user.college
-        if not college_display or college_display.strip().lower() == "unknown":
-            try:
-                college_display = user.email.split("@")[1].strip().upper()
-            except Exception:
-                college_display = "Unknown"
-
-        entry = {
-            "rank": rank,
-            "user_id": str(user.id),
-            "name": user.name,
-            "branch": user.branch,
-            "year": user.year,
-            "college": college_display,
-            "avatar_url": p.avatar_url,
-        }
-
-        if lb_type == "cp":
-            entry.update({
-                "cf_handle": p.cf_handle,
-                "cf_rating": p.cf_rating,
-                "cf_rank": p.cf_rank,
-                "cf_problems_solved": p.cf_problems_solved,
-                "lc_username": p.lc_username,
-                "lc_rating": p.lc_rating,
-                "lc_problems_solved": p.lc_problems_solved,
-                "cp_score": round(p.cp_score, 1)
-            })
-        elif lb_type == "hackathon":
-            h_count = HackathonResult.objects(user=user).count()
-            entry.update({
-                "score": p.hackathon_score,
-                "hackathons_count": h_count
-            })
-        elif lb_type == "github":
-            entry.update({
+            entry = {
+                "rank": rank,
+                "user_id": str(user.id),
+                "name": user.name,
+                "branch": user.branch,
+                "year": user.year,
+                "college": college_display,
+                "avatar_url": p.avatar_url,
                 "github_url": p.github_url,
-                "github_impl_score": p.github_impl_score,
-                "github_imp_score": p.github_imp_score,
-                "github_work_score": p.github_work_score,
-                "github_total_score": p.github_total_score,
+                "github_impl_score": user.github_implementation,
+                "github_imp_score": user.github_impact,
+                "github_work_score": user.github_working,
+                "github_total_score": user.github_score,
                 "github_review_reason": p.github_review_reason,
                 "github_username": p.github_username or "",
-                "github_rank": p.github_rank or ""
-            })
-        elif lb_type in ["overall", "global"]:
-            entry.update({
-                "score": round(p.global_score, 1),
-                "global_score": round(p.global_score, 1),
-                "cp_score": round(p.cp_score, 1),
-                "hackathon_score": p.hackathon_score,
-                "github_score": round(p.github_total_score, 1)
-            })
-        
-        leaderboard.append(entry)
+                "github_rank": p.github_rank or "",
+                "github_score": user.github_score,
+            }
+            leaderboard.append(entry)
+    else:
+        # 3. Query Profiles
+        # Always query profiles bound to our student user_query.
+        query = Profile.objects(user__in=user_query)
+        query = query.order_by(sort_field)
+        total_count = query.count()
+        profiles = query.skip(skip).limit(per_page)
+        leaderboard = []
+
+        # Build Result
+        for idx, p in enumerate(profiles):
+            rank = skip + idx + 1
+            user = p.user
+            if not user:
+                continue
+
+            college_display = user.college
+            if not college_display or college_display.strip().lower() == "unknown":
+                try:
+                    college_display = user.email.split("@")[1].strip().upper()
+                except Exception:
+                    college_display = "Unknown"
+
+            entry = {
+                "rank": rank,
+                "user_id": str(user.id),
+                "name": user.name,
+                "branch": user.branch,
+                "year": user.year,
+                "college": college_display,
+                "avatar_url": p.avatar_url,
+            }
+
+            if lb_type == "cp":
+                entry.update({
+                    "cf_handle": p.cf_handle,
+                    "cf_rating": p.cf_rating,
+                    "cf_rank": p.cf_rank,
+                    "cf_problems_solved": p.cf_problems_solved,
+                    "lc_username": p.lc_username,
+                    "lc_rating": p.lc_rating,
+                    "lc_problems_solved": p.lc_problems_solved,
+                    "cp_score": round(p.cp_score, 1)
+                })
+            elif lb_type == "hackathon":
+                h_count = HackathonResult.objects(user=user).count()
+                entry.update({
+                    "score": p.hackathon_score,
+                    "hackathons_count": h_count
+                })
+            elif lb_type in ["overall", "global"]:
+                entry.update({
+                    "score": round(p.global_score, 1),
+                    "global_score": round(p.global_score, 1),
+                    "cp_score": round(p.cp_score, 1),
+                    "hackathon_score": p.hackathon_score,
+                    "github_score": round(user.github_score, 1) if user else 0.0
+                })
+            
+            leaderboard.append(entry)
 
     response_data = {
         "leaderboard": leaderboard, 

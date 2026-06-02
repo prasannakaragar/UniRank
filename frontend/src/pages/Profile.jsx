@@ -106,8 +106,20 @@ export default function Profile() {
     setSyncing(true); setMsg(null)
     try {
       const endpoint = id ? `/profile/refresh/${id}` : '/profile/sync'
-      await api.post(endpoint)
-      await fetchProfile()
+      const res = await api.post(endpoint)
+
+      setProfile(prev => ({
+        ...prev,
+        github_score: res.data.github_score,
+        github_implementation: res.data.implementation,
+        github_working: res.data.working,
+        github_impact: res.data.impact
+      }))
+
+      if (isOwnProfile) {
+        await refreshUser()
+      }
+
       setMsg({ type: 'ok', text: 'Profile refreshed successfully!' })
     } catch (err) {
       setMsg({ type: 'err', text: err.response?.data?.error || 'Refresh failed.' })
@@ -306,7 +318,7 @@ export default function Profile() {
 
           {/* GitHub Score Card */}
           <div className="md:col-span-2">
-            <GitHubScoreCard profile={profile} />
+            <GitHubScoreCard user={profile} />
           </div>
 
           {/* Individual platform cards */}

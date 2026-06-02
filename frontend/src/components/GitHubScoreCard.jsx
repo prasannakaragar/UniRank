@@ -135,8 +135,8 @@ function StatChip({ label, value }) {
 }
 
 /* ─── Main Component ────────────────────────────────────────────────── */
-export default function GitHubScoreCard({ profile }) {
-  const hasGitHubData = profile && (profile.github_total_score !== undefined || profile.github_repos !== undefined);
+export default function GitHubScoreCard({ user }) {
+  const hasGitHubData = user && (user.github_score !== undefined || user.github_repos !== undefined);
   
   const containerStyle = {
     fontFamily: 'Sora, Inter, "DM Sans", sans-serif',
@@ -165,11 +165,11 @@ export default function GitHubScoreCard({ profile }) {
     )
   }
 
-  const final = profile.github_total_score || 0
-  const impl = profile.github_impl_score || 0
-  const working = profile.github_work_score || 0
-  const impact = profile.github_imp_score || 0
-  const username = profile.github_username || ''
+  const score = user.github_score || 0
+  const impl = user.github_implementation || 0
+  const working = user.github_working || 0
+  const impact = user.github_impact || 0
+  const username = user.github_username || ''
   
   return (
     <div id="github-score-card" style={containerStyle}>
@@ -208,7 +208,7 @@ export default function GitHubScoreCard({ profile }) {
           marginBottom: 14,
         }}>
           <div style={{ display: 'flex', gap: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-            <CircularScore score={final} />
+            <CircularScore score={score} />
             <div style={{ flex: 1, minWidth: 160, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <ScoreBar label="Implementation" score={impl} />
               <ScoreBar label="Working"        score={working} />
@@ -219,9 +219,9 @@ export default function GitHubScoreCard({ profile }) {
 
         {/* Stats row */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <StatChip label="Repos"  value={profile.github_repos || 0} />
-          <StatChip label="Stars"  value={profile.github_stars || 0} />
-          <StatChip label="Commits"  value={profile.github_commits || 0} />
+          <StatChip label="Repos"  value={user.github_repos || 0} />
+          <StatChip label="Stars"  value={user.github_stars || 0} />
+          <StatChip label="Commits"  value={user.github_commits || 0} />
         </div>
 
       </div>

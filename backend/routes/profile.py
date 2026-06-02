@@ -2,14 +2,15 @@
 routes/profile.py
 View and update student profiles + trigger Codeforces sync.
 """
-from datetime import datetime
-from flask import Blueprint, request, jsonify
+from datetime import datetime, timedelta, timezone
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import db, User, Profile
 from utils.codeforces import sync_user_stats
 from utils.leetcode import sync_leetcode_stats
 from utils.scoring import update_user_scores
 from utils.github_stats import get_github_stats
+from utils.rate_limiter import rate_limit
 
 profile_bp = Blueprint("profile", __name__)
 
@@ -178,17 +179,11 @@ def update_profile(uid=None):
             profile.lc_problems_solved = stats.get("lc_problems_solved", 0)
             profile.last_synced        = datetime.utcnow()
 
-    # ── Accept GitHub Score Card results directly (bypasses old AI analysis) ──
-    if "github_score" in data:
-        profile.github_total_score = float(data.get("github_score", 0))
-        profile.github_impl_score  = float(data.get("github_impl",  0))
-        profile.github_imp_score   = float(data.get("github_impact", 0))
-        profile.github_work_score  = float(data.get("github_working", 0))
-        if "github_rank"     in data: profile.github_rank     = data["github_rank"]
-        if "github_username" in data: profile.github_username = data["github_username"]
-        profile.save()
-        update_user_scores(str(user.id))
-        return jsonify({"message": "GitHub score saved", "profile": profile.to_dict()}), 200
+    if "github_url" in data:
+        github_url = data["github_url"]
+        if github_url:
+            username = github_url.rstrip("/").split("/")[-1]
+            profile.github_username = username
 
     profile.save()
     update_user_scores(str(user.id))
@@ -198,11 +193,12 @@ def update_profile(uid=None):
 @profile_bp.route("/profile/sync", methods=["POST"])
 @profile_bp.route("/profile/refresh/<uid>", methods=["POST"])
 @jwt_required()
+@rate_limit(max_requests=3, window_seconds=60)
 def refresh_profile(uid=None):
     """
     POST /api/profile/sync (self)
     POST /api/profile/refresh/<uid> (any user)
-    Manual refresh for GitHub, Codeforces, and LeetCode stats with a 30s cooldown.
+    Manual refresh for GitHub, Codeforces, and LeetCode stats with a 1-hour cooldown for GitHub.
     """
     current_user_id = get_jwt_identity()
     target_user_id = uid if uid else current_user_id
@@ -210,12 +206,34 @@ def refresh_profile(uid=None):
     user = User.objects(id=target_user_id).first_or_404()
     profile = Profile.objects(user=user).first_or_404()
 
-    # Cooldown Check (30 seconds)
-    if profile.last_synced:
-        elapsed = (datetime.utcnow() - profile.last_synced).total_seconds()
-        if elapsed < 30:
-            return jsonify({"error": f"Please wait {int(30 - elapsed)} seconds before refreshing again."}), 429
+    # Extract GitHub username safely
+    github_url = profile.github_url
+    username = None
+    if github_url:
+        username = github_url.rstrip("/").split("/")[-1]
+    if not username and profile.github_username:
+        username = profile.github_username
 
+    if not username:
+        return jsonify({"error": "No GitHub username or URL configured."}), 400
+
+    # Cooldown Check (1 Hour for GitHub Refresh)
+    now = datetime.now(timezone.utc)
+    if user.last_github_refresh:
+        last_refresh = user.last_github_refresh
+        if last_refresh.tzinfo is None:
+            last_refresh = last_refresh.replace(tzinfo=timezone.utc)
+            
+        next_allowed = last_refresh + timedelta(hours=1)
+        if now < next_allowed:
+            remaining = (next_allowed - now).seconds // 60
+            return jsonify({
+                "error": "Too many requests",
+                "next_refresh_in_minutes": remaining,
+                "can_refresh": False
+            }), 429
+
+    # Sync Codeforces and LeetCode stats if they exist
     if profile.cf_handle:
         cf_stats = sync_user_stats(profile.cf_handle)
         profile.cf_rating          = cf_stats.get("cf_rating", 0)
@@ -234,31 +252,83 @@ def refresh_profile(uid=None):
             profile.lc_rank            = lc_stats.get("lc_rank", 0)
             profile.lc_problems_solved = lc_stats.get("lc_problems_solved", 0)
 
-    # Fetch GitHub stats
-    gh_username = profile.github_username
-    if not gh_username and profile.github_url:
-        import re
-        match = re.search(r'github\.com/([^/]+)', profile.github_url)
-        if match:
-            gh_username = match.group(1)
-            profile.github_username = gh_username
-            
-    if gh_username:
-        from utils.github_stats import get_github_stats, calculate_github_score
-        gh_stats = get_github_stats(gh_username)
-        profile.github_repos = gh_stats.get("github_repos", 0)
-        profile.github_stars = gh_stats.get("github_stars", 0)
-        profile.github_commits = gh_stats.get("github_commits", 0)
-        
-        scores = calculate_github_score(gh_stats)
-        profile.github_impl_score = scores["github_impl"]
-        profile.github_work_score = scores["github_working"]
-        profile.github_imp_score = scores["github_impact"]
-        profile.github_total_score = scores["github_score"]
-        profile.github_rank = scores["github_rank"]
+    # Fetch GitHub stats safely
+    from utils.github_stats import get_github_stats, calculate_github_score
+    
+    old_impl = getattr(user, 'github_implementation', 0.0) or 0.0
+    old_work = getattr(user, 'github_working', 0.0) or 0.0
+    old_imp = getattr(user, 'github_impact', 0.0) or 0.0
+    old_score = getattr(user, 'github_score', 0.0) or 0.0
 
+    api_failed = False
+    try:
+        gh_stats = get_github_stats(username)
+        if not gh_stats or (gh_stats.get("github_repos") == 0 and gh_stats.get("github_commits") == 0 and old_score > 0):
+            api_failed = True
+    except Exception as e:
+        api_failed = True
+
+    if api_failed:
+        # DO NOT overwrite existing score, return old score
+        current_app.logger.warning(f"[GITHUB REFRESH] API failure for {user.email}, returning old score {old_score}")
+        profile.last_synced = datetime.utcnow()
+        profile.save()
+        return jsonify({
+            "github_score": old_score,
+            "implementation": old_impl,
+            "working": old_work,
+            "impact": old_imp,
+            "can_refresh": True
+        }), 200
+
+    profile.github_repos = gh_stats.get("github_repos", 0)
+    profile.github_stars = gh_stats.get("github_stars", 0)
+    profile.github_commits = gh_stats.get("github_commits", 0)
+    
+    try:
+        scores = calculate_github_score(gh_stats)
+        implementation = scores.get("github_impl", 0.0)
+        working = scores.get("github_working", 0.0)
+        impact = scores.get("github_impact", 0.0)
+        github_score = round((implementation + working + impact) / 3.0, 2)
+        github_rank = scores.get("github_rank", "Starter")
+    except Exception as e:
+        implementation = old_impl
+        working = old_work
+        impact = old_imp
+        github_score = old_score
+        github_rank = profile.github_rank or "Starter"
+
+    # Clamp score if needed
+    github_score = max(0.0, min(10.0, github_score))
+
+    # Save to DB (User model is single source of truth)
+    user.github_implementation = implementation
+    user.github_working = working
+    user.github_impact = impact
+    user.github_score = github_score
+    user.last_github_refresh = now
+    user.save()
+
+    # Sync to Profile for backward compatibility
+    profile.github_impl_score = implementation
+    profile.github_work_score = working
+    profile.github_imp_score = impact
+    profile.github_total_score = github_score
+    profile.github_rank = github_rank
     profile.last_synced = datetime.utcnow()
     profile.save()
+
+    # Recalculate overall global score
     update_user_scores(str(user.id))
 
-    return jsonify({"message": "Profile refreshed successfully", "profile": profile.to_dict()}), 200
+    # Log refresh event
+    current_app.logger.info(f"[GITHUB REFRESH] {user.email} → {github_score}")
+
+    return jsonify({
+        "github_score": github_score,
+        "implementation": implementation,
+        "working": working,
+        "impact": impact,
+        "can_refresh": True
+    }), 200
