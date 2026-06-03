@@ -76,6 +76,10 @@ def get_github_stats(username: str) -> dict:
         # 1. Fetch User Info (for repos count)
         user_url = f"https://api.github.com/users/{username}"
         user_resp = requests.get(user_url, headers=headers, timeout=8)
+        
+        if user_resp.status_code == 403 or user_resp.status_code == 429:
+            raise Exception("GitHub API rate limit exceeded.")
+            
         if user_resp.status_code == 200:
             user_data = user_resp.json()
             stats["github_repos"] = user_data.get("public_repos", 0)
@@ -136,6 +140,7 @@ def get_github_stats(username: str) -> dict:
                 
     except Exception as e:
         print(f"Error fetching GitHub stats: {e}")
+        raise e
         
     return stats
 

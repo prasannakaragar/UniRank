@@ -60,7 +60,7 @@ function StudentDashboard() {
             <p className="font-bold text-text-primary text-lg">Connect Codeforces</p>
             <p className="text-sm text-text-secondary mt-1 font-medium">Add your handle to appear on the leaderboard and track your progress.</p>
           </div>
-          <Link to="/profile" className="btn-primary py-2.5">Set Handle →</Link>
+          <Link to="/profile?tab=settings" className="btn-primary py-2.5">Set Handle →</Link>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 import GitHubScoreCard from '../components/GitHubScoreCard'
@@ -73,7 +73,11 @@ export default function Profile() {
   const [syncing, setSyncing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
-  const [activeTab, setActiveTab] = useState('overview')
+  const location = useLocation()
+  const queryParams = new URLSearchParams(location.search)
+  const tabFromUrl = queryParams.get('tab')
+  
+  const [activeTab, setActiveTab] = useState(tabFromUrl || 'overview')
   const navigate = useNavigate()
 
   // Follow Modal state

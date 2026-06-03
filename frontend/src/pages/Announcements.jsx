@@ -331,7 +331,40 @@ export default function Announcements() {
     setLoading(true)
     const params = category !== 'all' ? `?category=${category}` : ''
     api.get(`/announcements${params}`)
-      .then(r => setPosts(r.data.announcements))
+      .then(r => {
+        let fetched = r.data.announcements || []
+        if (fetched.length === 0) {
+          fetched = [
+            {
+              id: 'dummy-1',
+              title: 'Global AI Hackathon 2025',
+              category: 'hackathon',
+              organization: 'Tech Innovators',
+              description: 'Join the biggest AI hackathon of the year and build the future.',
+              mode: 'Online',
+              team_size: '2-4 Members',
+              tags: ['AI', 'Web3', 'React'],
+              perks: '₹1 Lakh Prize Pool',
+              created_at: new Date().toISOString(),
+              deadline: new Date(Date.now() + 86400000 * 10).toISOString(),
+            },
+            {
+              id: 'dummy-2',
+              title: 'CodeSprint Weekly Challenge',
+              category: 'contest',
+              organization: 'CodeForces',
+              description: 'Test your algorithmic skills in this fast-paced 2-hour contest.',
+              mode: 'Online',
+              team_size: 'Individual',
+              tags: ['DSA', 'Algorithms'],
+              perks: 'Top 10 get interviews',
+              created_at: new Date(Date.now() - 86400000).toISOString(),
+              event_date: new Date(Date.now() + 86400000 * 3).toISOString(),
+            }
+          ]
+        }
+        setPosts(fetched)
+      })
       .finally(() => setLoading(false))
   }
 

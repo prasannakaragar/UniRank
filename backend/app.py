@@ -9,7 +9,7 @@ Production: gunicorn --worker-class eventlet -w 1 "app:create_app()" --bind 0.0.
 import os
 import socket as _socket
 
-from flask import Flask, send_from_directory, jsonify
+from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_bcrypt import Bcrypt
@@ -159,7 +159,15 @@ def create_app():
         if is_debug:
             body["details"]   = str(e)
             body["traceback"] = tb
-        return jsonify(body), 500
+        response = jsonify(body)
+        response.status_code = 500
+        
+        origin = request.headers.get("Origin")
+        if origin in allowed_origins:
+            response.headers.add("Access-Control-Allow-Origin", origin)
+            response.headers.add("Access-Control-Allow-Credentials", "true")
+            
+        return response
 
     return app
 
