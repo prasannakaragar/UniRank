@@ -85,18 +85,32 @@ def get_github_stats(username: str) -> dict:
             stats["github_repos"] = user_data.get("public_repos", 0)
 
         # 2. Fetch Repos (for stars count and working score)
-        repos_url = f"https://api.github.com/users/{username}/repos?per_page=100"
-        repos_resp = requests.get(repos_url, headers=headers, timeout=10)
-        
         valid_repos = []
-        if repos_resp.status_code == 200:
-            repos_data = repos_resp.json()
-            total_stars = 0
-            for repo in repos_data:
-                if not repo.get("fork"):
-                    total_stars += repo.get("stargazers_count", 0)
-                    valid_repos.append(repo)
-            stats["github_stars"] = total_stars
+        total_stars = 0
+        page = 1
+        while True:
+            repos_url = f"https://api.github.com/users/{username}/repos?per_page=100&page={page}"
+            repos_resp = requests.get(repos_url, headers=headers, timeout=10)
+            
+            if repos_resp.status_code == 200:
+                repos_data = repos_resp.json()
+                if not repos_data:
+                    break  # No more repos
+                
+                for repo in repos_data:
+                    if not repo.get("fork"):
+                        total_stars += repo.get("stargazers_count", 0)
+                        valid_repos.append(repo)
+                page += 1
+            elif repos_resp.status_code in [403, 429]:
+                raise Exception("GitHub API rate limit exceeded.")
+            else:
+                break
+                
+        stats["github_stars"] = total_stars
+        # If public_repos from user info API somehow failed or was 0, fallback to valid_repos length
+        if stats["github_repos"] == 0 and valid_repos:
+            stats["github_repos"] = len(valid_repos)
             
         # 2.5 Calculate Working Score in Parallel
         if valid_repos:
