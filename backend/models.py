@@ -202,17 +202,17 @@ class Profile(db.Document):
             "global_score": self.global_score,
             # Legacy field kept for backward compat
             "github_analysis": {
-                "implementation": self.github_impl_score,
-                "impact": self.github_imp_score,
-                "working": self.github_work_score,
-                "total": self.github_total_score,
+                "implementation": self.user.github_implementation,
+                "impact": self.user.github_impact,
+                "working": self.user.github_working,
+                "total": self.user.github_score,
                 "reason": self.github_review_reason
             },
             # Flat fields used by leaderboard
-            "github_score": self.github_total_score,
-            "github_impl_score": self.github_impl_score,
-            "github_imp_score": self.github_imp_score,
-            "github_work_score": self.github_work_score,
+            "github_score": self.user.github_score,
+            "github_impl_score": self.user.github_implementation,
+            "github_imp_score": self.user.github_impact,
+            "github_work_score": self.user.github_working,
         }
 
 
