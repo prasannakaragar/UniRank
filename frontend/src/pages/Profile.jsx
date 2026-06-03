@@ -3,6 +3,20 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 import GitHubScoreCard from '../components/GitHubScoreCard'
+import { io } from 'socket.io-client'
+
+function timeAgo(dateStr) {
+  const now = new Date()
+  const date = new Date(dateStr)
+  const seconds = Math.floor((now - date) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min${minutes > 1 ? 's' : ''} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`
+  const days = Math.floor(hours / 24)
+  return `${days} day${days > 1 ? 's' : ''} ago`
+}
 
 const RANK_COLORS = {
   'legendary grandmaster': '#ff0000', 'international grandmaster': '#ff0000',
@@ -46,6 +60,14 @@ export default function Profile() {
   const { id } = useParams()
   const { user: currentUser, refreshUser } = useAuth()
   const isOwnProfile = !id || id === currentUser?.id
+
+  const EVENT_POINTS = {
+    'Attended': 10,
+    'Participated': 15,
+    '3rd Place': 30,
+    '2nd Place': 50,
+    '1st Place': 100,
+  }
   const [profile, setProfile] = useState(null)
   const [editing, setEditing] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -64,7 +86,9 @@ export default function Profile() {
 
   // Hackathon form state
   const [showHForm, setShowHForm] = useState(false)
-  const [hForm, setHForm] = useState({ hackathon_name: '', position: 0 })
+  const [hForm, setHForm] = useState({ hackathon_name: '', event_type: '', certificate_file: null })
+  const [submitting, setSubmitting] = useState(false)
+  const [mySubmissions, setMySubmissions] = useState([])
 
   const fetchProfile = () => {
     const endpoint = id ? `/profile/${id}` : '/profile'
@@ -81,8 +105,30 @@ export default function Profile() {
     })
   }
 
+  const fetchMySubmissions = () => {
+    if (isOwnProfile) {
+      api.get('/hackathons/my-submissions').then(r => setMySubmissions(r.data.submissions || [])).catch(() => {})
+    }
+  }
 
-  useEffect(() => { fetchProfile() }, [id])
+  useEffect(() => { fetchProfile(); fetchMySubmissions() }, [id])
+
+  useEffect(() => {
+    if (!isOwnProfile || !currentUser?.id) return
+    const socket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || window.location.origin)
+    socket.on('certificate_status_update', (data) => {
+      if (data.student_id === currentUser.id) {
+        fetchMySubmissions()
+        fetchProfile()
+        if (data.status === 'approved') {
+          setMsg({ type: 'ok', text: `Your submission was approved! ${data.points} points awarded.` })
+        } else if (data.status === 'rejected') {
+          setMsg({ type: 'err', text: 'Your submission was rejected.' })
+        }
+      }
+    })
+    return () => socket.disconnect()
+  }, [isOwnProfile, currentUser?.id])
 
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true); setMsg(null)
@@ -157,15 +203,36 @@ export default function Profile() {
 
   const handleAddHackathon = async (e) => {
     e.preventDefault()
+    if (!hForm.event_type || !hForm.hackathon_name) {
+      setMsg({ type: 'err', text: 'Please fill all required fields.' })
+      return
+    }
+    setSubmitting(true)
+    setMsg(null)
     try {
-      await api.post('/hackathons/submit', { ...hForm, certificate_url: 'pending_upload' })
-      setHForm({ hackathon_name: '', position: 0 })
+      let certificate_url = ''
+      if (hForm.certificate_file) {
+        const formData = new FormData()
+        formData.append('file', hForm.certificate_file)
+        const uploadRes = await api.post('/upload/image', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        certificate_url = uploadRes.data.url
+      }
+      await api.post('/hackathons/submit', {
+        hackathon_name: hForm.hackathon_name,
+        event_type: hForm.event_type,
+        certificate_url: certificate_url || 'no_certificate'
+      })
+      setHForm({ hackathon_name: '', event_type: '', certificate_file: null })
       setShowHForm(false)
-      alert('Achievement request submitted to admins for review.')
+      setMsg({ type: 'ok', text: 'Request submitted! Awaiting admin approval.' })
+      fetchMySubmissions()
       fetchProfile()
-      refreshUser()
     } catch (err) {
-      alert(err.response?.data?.error || 'Failed to add achievement')
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to submit achievement' })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -433,13 +500,69 @@ export default function Profile() {
                     value={hForm.hackathon_name} onChange={e => setHForm(p => ({ ...p, hackathon_name: e.target.value }))} />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="section-label block mb-2">Rank (e.g., 1 for 1st Place)</label>
-                  <input className="input" type="number" required min="1"
-                    value={hForm.position || ''} onChange={e => setHForm(p => ({ ...p, position: parseInt(e.target.value) || 0 }))} />
+                  <label className="section-label block mb-2">Event Type</label>
+                  <select className="input" required
+                    value={hForm.event_type} onChange={e => setHForm(p => ({ ...p, event_type: e.target.value }))}>
+                    <option value="">Select event type...</option>
+                    <option value="Attended">Attended</option>
+                    <option value="Participated">Participated</option>
+                    <option value="3rd Place">3rd Place</option>
+                    <option value="2nd Place">2nd Place</option>
+                    <option value="1st Place">1st Place</option>
+                  </select>
+                  {hForm.event_type && (
+                    <p className="text-sm font-medium text-emerald-600 mt-2">✨ You will receive {EVENT_POINTS[hForm.event_type]} points upon admin approval.</p>
+                  )}
+                </div>
+                <div className="md:col-span-2">
+                  <label className="section-label block mb-2">Certificate Image (optional)</label>
+                  <input type="file" accept="image/*" className="input text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                    onChange={e => setHForm(p => ({ ...p, certificate_file: e.target.files[0] || null }))} />
+                  {hForm.certificate_file && (
+                    <p className="text-xs text-text-secondary mt-1 font-medium">📎 {hForm.certificate_file.name}</p>
+                  )}
                 </div>
               </div>
-              <button type="submit" className="btn-primary w-full py-4 font-bold">Submit Request</button>
+              <button type="submit" disabled={submitting} className="btn-primary w-full py-4 font-bold disabled:opacity-60">
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </button>
             </form>
+          )}
+
+          {isOwnProfile && mySubmissions.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="section-label">MY SUBMISSIONS</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border-dim">
+                      <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-text-secondary">Event Name</th>
+                      <th className="text-left py-3 px-4 text-[10px] font-black uppercase tracking-widest text-text-secondary">Type</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black uppercase tracking-widest text-text-secondary">Points</th>
+                      <th className="text-center py-3 px-4 text-[10px] font-black uppercase tracking-widest text-text-secondary">Status</th>
+                      <th className="text-right py-3 px-4 text-[10px] font-black uppercase tracking-widest text-text-secondary">Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mySubmissions.map(s => (
+                      <tr key={s.id} className="border-b border-border-dim/50 hover:bg-page/30 transition-colors">
+                        <td className="py-4 px-4 font-bold text-text-primary">{s.hackathon_name}</td>
+                        <td className="py-4 px-4 text-text-secondary">{s.event_type}</td>
+                        <td className="py-4 px-4 text-center font-bold">{s.points_to_award}</td>
+                        <td className="py-4 px-4 text-center">
+                          {s.status === 'pending' && <span className="badge bg-yellow-50 text-yellow-700 border border-yellow-200">🟡 Pending</span>}
+                          {s.status === 'approved' && (
+                            <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200">🟢 Approved</span>
+                          )}
+                          {s.status === 'rejected' && <span className="badge bg-red-50 text-red-700 border border-red-200">🔴 Rejected</span>}
+                        </td>
+                        <td className="py-4 px-4 text-right text-text-secondary text-xs">{timeAgo(s.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           )}
 
           <div className="divide-y divide-dashed divide-border-dim">

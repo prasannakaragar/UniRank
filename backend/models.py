@@ -495,18 +495,25 @@ class ProjectReview(db.Document):
 class HackathonSubmission(db.Document):
     """
     Hackathon achievement submission for verification.
+    Uses event_type-based points: Attended=10, Participated=15, 3rd Place=30, 2nd Place=50, 1st Place=100.
     """
-    meta = {'collection': 'hackathon_submissions'}
+    meta = {'collection': 'hackathon_submissions', 'strict': False}
 
     user            = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
     hackathon_name  = db.StringField(max_length=200, required=True)
-    position        = db.IntField(required=True) # e.g. 1, 2, 3
-    certificate_url = db.StringField(required=True)
-    status          = db.StringField(max_length=20, default='pending') # pending, approved, rejected
-    approvals       = db.ListField(db.ReferenceField(User)) # List of admin/reviewer IDs
-    rejections      = db.ListField(db.ReferenceField(User)) # List of admin/reviewer IDs
+    event_type      = db.StringField(max_length=30, default='Attended')  # Attended|Participated|3rd Place|2nd Place|1st Place
+    certificate_url = db.StringField(default='')
+    points_to_award = db.IntField(default=0)
+    status          = db.StringField(max_length=20, default='pending')  # pending, approved, rejected
+    reviewed_by     = db.ReferenceField(User)
+    reviewed_at     = db.DateTimeField()
     created_at      = db.DateTimeField(default=datetime.utcnow)
-    
+
+    # Legacy fields kept for backward compat with old documents
+    position        = db.IntField(default=0)
+    approvals       = db.ListField(db.ReferenceField(User))
+    rejections      = db.ListField(db.ReferenceField(User))
+
     def to_dict(self):
         return {
             "id": str(self.id),
@@ -514,24 +521,28 @@ class HackathonSubmission(db.Document):
             "user_name": self.user.name,
             "user_college": self.user.college,
             "hackathon_name": self.hackathon_name,
-            "position": self.position,
-            "certificate_url": self.certificate_url,
+            "event_type": self.event_type or '',
+            "certificate_url": self.certificate_url or '',
+            "points_to_award": self.points_to_award or 0,
             "status": self.status,
-            "approvals": [str(u.id) for u in self.approvals],
-            "rejections": [str(u.id) for u in self.rejections],
+            "reviewed_by": str(self.reviewed_by.id) if self.reviewed_by else None,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "created_at": self.created_at.isoformat()
         }
 
 class Notification(db.Document):
     """
     System notifications for users/admins.
+    Extended with request_id for certificate requests and read_by for multi-admin tracking.
     """
-    meta = {'collection': 'notifications', 'indexes': ['-created_at', 'recipient']}
+    meta = {'collection': 'notifications', 'strict': False, 'indexes': ['-created_at', 'recipient']}
 
     recipient   = db.ReferenceField(User, reverse_delete_rule=db.CASCADE, required=True)
     title       = db.StringField(max_length=100, required=True)
     message     = db.StringField(required=True)
     type        = db.StringField(max_length=50, default='system')
+    request_id  = db.ReferenceField(HackathonSubmission)  # Link to certificate request
+    read_by     = db.ListField(db.StringField())           # Admin IDs who actioned it
     link        = db.StringField()
     is_read     = db.BooleanField(default=False)
     created_at  = db.DateTimeField(default=datetime.utcnow)
@@ -542,6 +553,8 @@ class Notification(db.Document):
             "title": self.title,
             "message": self.message,
             "type": self.type,
+            "request_id": str(self.request_id.id) if self.request_id else None,
+            "read_by": self.read_by or [],
             "link": self.link,
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat()
