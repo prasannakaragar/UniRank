@@ -1,14 +1,64 @@
 import requests
 import os
+import concurrent.futures
+
+def evaluate_repository(repo, headers):
+    """
+    Evaluate a single repository for the Working Score.
+    Returns the repo_score (float) or -1 if the repository is discarded.
+    """
+    owner = repo.get("owner", {}).get("login")
+    repo_name = repo.get("name")
+    if not owner or not repo_name:
+        return -1
+        
+    # B. Commit Activity Check
+    commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page=10"
+    commits_resp = requests.get(commits_url, headers=headers, timeout=8)
+    if commits_resp.status_code == 200:
+        commits = commits_resp.json()
+        if len(commits) < 5:
+            return -1  # Discard repo
+    else:
+        # If API fails (e.g. empty repo), discard
+        return -1
+        
+    repo_score = 0.0
+
+    # A. Deployment Check
+    if repo.get("homepage"):
+        repo_score += 4.0
+        
+    if len(commits) >= 10:
+        repo_score += 1.0
+
+    # C & D. Project Structure & README Check
+    contents_url = f"https://api.github.com/repos/{owner}/{repo_name}/contents"
+    contents_resp = requests.get(contents_url, headers=headers, timeout=8)
+    if contents_resp.status_code == 200:
+        contents = contents_resp.json()
+        if isinstance(contents, list):
+            file_names = [item.get("name", "").lower() for item in contents]
+            
+            # Setup files
+            if any(f in file_names for f in ["package.json", "requirements.txt", "dockerfile", ".env.example"]):
+                repo_score += 3.0
+                
+            # README check
+            if "readme.md" in file_names:
+                repo_score += 2.0
+                
+    return repo_score
 
 def get_github_stats(username: str) -> dict:
     """
-    Fetch GitHub statistics: public repos count, total stars, and total commits.
+    Fetch GitHub statistics: public repos count, total stars, total commits, and working score.
     """
     stats = {
         "github_repos": 0,
         "github_stars": 0,
-        "github_commits": 0
+        "github_commits": 0,
+        "working_score": 0.0
     }
     if not username:
         return stats
@@ -30,13 +80,37 @@ def get_github_stats(username: str) -> dict:
             user_data = user_resp.json()
             stats["github_repos"] = user_data.get("public_repos", 0)
 
-        # 2. Fetch Repos (for stars count)
+        # 2. Fetch Repos (for stars count and working score)
         repos_url = f"https://api.github.com/users/{username}/repos?per_page=100"
         repos_resp = requests.get(repos_url, headers=headers, timeout=10)
+        
+        valid_repos = []
         if repos_resp.status_code == 200:
             repos_data = repos_resp.json()
-            total_stars = sum(repo.get("stargazers_count", 0) for repo in repos_data if not repo.get("fork"))
+            total_stars = 0
+            for repo in repos_data:
+                if not repo.get("fork"):
+                    total_stars += repo.get("stargazers_count", 0)
+                    valid_repos.append(repo)
             stats["github_stars"] = total_stars
+            
+        # 2.5 Calculate Working Score in Parallel
+        if valid_repos:
+            repo_scores = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(evaluate_repository, r, headers): r for r in valid_repos}
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        score = future.result()
+                        if score != -1:
+                            repo_scores.append(score)
+                    except Exception as e:
+                        pass
+            
+            if repo_scores:
+                stats["working_score"] = min(sum(repo_scores) / len(repo_scores), 10.0)
+            else:
+                stats["working_score"] = 0.0
         
         # 3. Fetch Commits using Search Commits API
         commit_headers = {**headers, "Accept": "application/vnd.github.cloak-preview+json"}
@@ -67,8 +141,7 @@ def get_github_stats(username: str) -> dict:
 
 def calculate_github_score(stats: dict) -> dict:
     """
-    Calculate GitHub score deterministically on the backend based on repos, stars, and commits.
-    This replaces the client-side heuristic.
+    Calculate GitHub score deterministically on the backend based on repos, stars, commits, and project usability.
     """
     repos = stats.get("github_repos", 0)
     stars = stats.get("github_stars", 0)
@@ -87,8 +160,8 @@ def calculate_github_score(stats: dict) -> dict:
 
     impl = min(impl + (repos * 0.1), 10.0)
 
-    # 2. Working Score (proxy based on activity density)
-    working = min((commits / max(repos, 1)) * 0.5 + (repos * 0.2), 10.0)
+    # 2. Working Score (real project usability)
+    working = stats.get("working_score", 0.0)
 
     # 3. Impact Score (based on stars)
     impact = 0
