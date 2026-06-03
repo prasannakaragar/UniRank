@@ -325,6 +325,12 @@ def refresh_profile(uid=None):
     # Log refresh event
     current_app.logger.info(f"[GITHUB REFRESH] {user.email} → {github_score}")
 
+    # Clear leaderboard cache so the new score reflects immediately
+    try:
+        current_app.cache.clear()
+    except Exception:
+        pass
+
     return jsonify({
         "github_score": github_score,
         "implementation": implementation,

@@ -71,11 +71,17 @@ def _is_college_email(email: str) -> bool:
     """
     Accept only college emails.
     Rule: domain contains '.edu' or '.ac.in', OR it exists in the colleges
-    collection (for custom-registered domains).
+    collection (for custom-registered domains), OR it explicitly contains 'iit' or 'nit'.
     """
     domain = email.split("@")[-1].lower()
+    
+    # explicitly allow iit and nit domains
+    if "iit" in domain or "nit" in domain:
+        return True
+        
     if ".edu" in domain or ".ac.in" in domain:
         return True
+        
     return bool(College.objects(domain=domain).first())
 
 
