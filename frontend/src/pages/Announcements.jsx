@@ -5,12 +5,17 @@ import api from '../api/axios'
 const CATEGORIES = ['all', 'hackathon', 'contest', 'general']
 
 // ── Compact List Card ──────────────────────────────────────────
-function AnnouncementListCard({ post, currentUserId, onDelete, onClick }) {
+function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick }) {
   const targetDate = post.deadline || post.event_date
-  const daysLeft = targetDate
-    ? Math.ceil((new Date(targetDate) - new Date()) / (1000 * 60 * 60 * 24))
+  const targetDateObj = targetDate ? new Date(targetDate) : null
+  const isValidDate = targetDateObj && !isNaN(targetDateObj)
+  const daysLeft = isValidDate
+    ? Math.ceil((targetDateObj - new Date()) / (1000 * 60 * 60 * 24))
     : null
   const isExpired = daysLeft !== null && daysLeft < 0
+
+  const createdDate = new Date(post.created_at)
+  const safeCreated = isNaN(createdDate) ? 'Unknown Date' : createdDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
   return (
     <div
@@ -48,7 +53,7 @@ function AnnouncementListCard({ post, currentUserId, onDelete, onClick }) {
               📍 {post.mode}
             </span>
           )}
-          {post.tags && post.tags.length > 0 && post.tags.slice(0, 2).map((tag, i) => (
+          {Array.isArray(post.tags) && post.tags.length > 0 && post.tags.slice(0, 2).map((tag, i) => (
             <span key={i} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-border-dim text-text-secondary text-xs font-bold">
               {tag}
             </span>
@@ -67,14 +72,14 @@ function AnnouncementListCard({ post, currentUserId, onDelete, onClick }) {
         {/* Bottom row */}
         <div className="flex items-center justify-between pt-4 border-t border-dashed border-border-dim">
           <div className="flex items-center gap-4 text-[13px] font-medium text-text-secondary">
-            <span>Posted {new Date(post.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+            <span>Posted {safeCreated}</span>
             {daysLeft !== null && (
               <span className={`font-bold ${isExpired ? 'text-danger' : 'text-emerald-500'}`}>
                 {daysLeft > 0 ? `Ends in ${daysLeft}d` : daysLeft === 0 ? 'ENDS TODAY' : 'EXPIRED'}
               </span>
             )}
           </div>
-          {user?.role === 'admin' && (
+          {userRole === 'admin' && (
             <button
               onClick={e => { e.stopPropagation(); onDelete(post.id) }}
               className="text-text-secondary hover:text-danger transition-colors p-1.5 hover:bg-danger/5 rounded-md"
@@ -104,14 +109,22 @@ function AnnouncementListCard({ post, currentUserId, onDelete, onClick }) {
 }
 
 // ── Detail Modal ────────────────────────────────────────────────
-function AnnouncementDetail({ post, onClose, currentUserId, onDelete }) {
+function AnnouncementDetail({ post, onClose, currentUserId, userRole, onDelete }) {
   if (!post) return null
 
   const targetDate = post.deadline || post.event_date
-  const daysLeft = targetDate
-    ? Math.ceil((new Date(targetDate) - new Date()) / (1000 * 60 * 60 * 24))
+  const targetDateObj = targetDate ? new Date(targetDate) : null
+  const isValidDate = targetDateObj && !isNaN(targetDateObj)
+  const daysLeft = isValidDate
+    ? Math.ceil((targetDateObj - new Date()) / (1000 * 60 * 60 * 24))
     : null
   const isExpired = daysLeft !== null && daysLeft < 0
+
+  const safeFormatDate = (dateStr) => {
+    if (!dateStr) return 'TBA'
+    const d = new Date(dateStr)
+    return isNaN(d) ? dateStr : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  }
 
   return (
     <div
@@ -196,7 +209,7 @@ function AnnouncementDetail({ post, onClose, currentUserId, onDelete }) {
                     <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">📅</div>
                     <div className="flex-1">
                       <p className="text-sm font-bold text-text-primary">Event Date</p>
-                      <p className="text-xs text-text-secondary font-medium">{new Date(post.event_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                      <p className="text-xs text-text-secondary font-medium">{safeFormatDate(post.event_date)}</p>
                     </div>
                   </div>
                 )}
@@ -206,7 +219,7 @@ function AnnouncementDetail({ post, onClose, currentUserId, onDelete }) {
                     <div className="flex-1">
                       <p className="text-sm font-bold text-text-primary">Registration Deadline</p>
                       <p className={`text-xs font-bold ${isExpired ? 'text-danger' : 'text-amber-700'}`}>
-                        {new Date(post.deadline).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} — {daysLeft > 0 ? `${daysLeft} days left` : isExpired ? 'Expired' : 'Ends today'}
+                        {safeFormatDate(post.deadline)} — {daysLeft > 0 ? `${daysLeft} days left` : isExpired ? 'Expired' : 'Ends today'}
                       </p>
                     </div>
                   </div>
@@ -226,7 +239,7 @@ function AnnouncementDetail({ post, onClose, currentUserId, onDelete }) {
                   Register Now ↗
                 </a>
               )}
-              {user?.role === 'admin' && (
+              {userRole === 'admin' && (
                 <button
                   onClick={() => { onDelete(post.id); onClose() }}
                   className="px-6 py-4 rounded-lg bg-danger/5 text-danger font-bold hover:bg-danger/10 transition-colors"
@@ -332,8 +345,8 @@ export default function Announcements() {
     const params = category !== 'all' ? `?category=${category}` : ''
     api.get(`/announcements${params}`)
       .then(r => {
-        let fetched = r.data.announcements || []
-        if (fetched.length === 0) {
+        let fetched = r.data?.announcements
+        if (!Array.isArray(fetched) || fetched.length === 0) {
           fetched = [
             {
               id: 'dummy-1',
@@ -364,6 +377,10 @@ export default function Announcements() {
           ]
         }
         setPosts(fetched)
+      })
+      .catch(err => {
+        console.error("Failed to fetch announcements:", err)
+        setPosts([])
       })
       .finally(() => setLoading(false))
   }
@@ -396,6 +413,7 @@ export default function Announcements() {
           post={selected}
           onClose={() => setSelected(null)}
           currentUserId={user?.id}
+          userRole={user?.role}
           onDelete={handleDelete}
         />
       )}
@@ -551,6 +569,7 @@ export default function Announcements() {
               key={p.id}
               post={p}
               currentUserId={user?.id}
+              userRole={user?.role}
               onDelete={handleDelete}
               onClick={setSelected}
             />
