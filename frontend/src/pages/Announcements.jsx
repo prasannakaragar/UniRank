@@ -376,6 +376,9 @@ export default function Announcements() {
             }
           ]
         }
+        if (category !== 'all') {
+          fetched = fetched.filter(p => p.category === category)
+        }
         setPosts(fetched)
       })
       .catch(err => {
