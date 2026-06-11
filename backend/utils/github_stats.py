@@ -11,26 +11,40 @@ def evaluate_repository(repo, headers):
     repo_name = repo.get("name")
     if not owner or not repo_name:
         return -1
-        
-    # B. Commit Activity Check
+
+    # B. Commit Activity Check — require at least 2 commits to be a real project
     commits_url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page=10"
     commits_resp = requests.get(commits_url, headers=headers, timeout=8)
     if commits_resp.status_code == 200:
         commits = commits_resp.json()
-        if len(commits) < 5:
-            return -1  # Discard repo
+        if not isinstance(commits, list) or len(commits) < 2:
+            return -1  # Discard empty/single-commit repos
     else:
         # If API fails (e.g. empty repo), discard
         return -1
-        
+
     repo_score = 0.0
 
-    # A. Deployment Check
+    # A. Deployment / Homepage Check
     if repo.get("homepage"):
-        repo_score += 4.0
-        
+        repo_score += 3.0
+
+    # B2. Commit depth bonus
     if len(commits) >= 10:
+        repo_score += 1.5
+    elif len(commits) >= 5:
+        repo_score += 0.75
+
+    # B3. Language bonus — repo has a detected language
+    if repo.get("language"):
         repo_score += 1.0
+
+    # B4. Repo size (proxy for actual code volume)
+    size = repo.get("size", 0)
+    if size > 1000:
+        repo_score += 1.5
+    elif size > 100:
+        repo_score += 0.75
 
     # C & D. Project Structure & README Check
     contents_url = f"https://api.github.com/repos/{owner}/{repo_name}/contents"
@@ -39,15 +53,15 @@ def evaluate_repository(repo, headers):
         contents = contents_resp.json()
         if isinstance(contents, list):
             file_names = [item.get("name", "").lower() for item in contents]
-            
-            # Setup files
-            if any(f in file_names for f in ["package.json", "requirements.txt", "dockerfile", ".env.example"]):
-                repo_score += 3.0
-                
-            # README check
-            if "readme.md" in file_names:
+
+            # Setup / dependency files
+            if any(f in file_names for f in ["package.json", "requirements.txt", "dockerfile", ".env.example", "pom.xml", "cargo.toml", "go.mod"]):
                 repo_score += 2.0
-                
+
+            # README check
+            if any(f.startswith("readme") for f in file_names):
+                repo_score += 1.5
+
     return repo_score
 
 def get_github_stats(username: str) -> dict:
@@ -160,50 +174,75 @@ def get_github_stats(username: str) -> dict:
 
 def calculate_github_score(stats: dict) -> dict:
     """
-    Calculate GitHub score deterministically on the backend based on repos, stars, commits, and project usability.
+    Calculate GitHub score deterministically based on repos, stars, commits, and project usability.
+    All three sub-scores (implementation, working, impact) are on a 0-10 scale.
+    The final github_score is the average of all three.
     """
     repos = stats.get("github_repos", 0)
     stars = stats.get("github_stars", 0)
     commits = stats.get("github_commits", 0)
 
-    # 1. Implementation Score
-    impl = 0
-    if commits > 500: impl += 4
-    elif commits > 100: impl += 3
-    elif commits > 50: impl += 2
-    elif commits > 10: impl += 1
-    
-    if repos > 20: impl += 3
-    elif repos > 10: impl += 2
-    elif repos > 5: impl += 1
+    # ── 1. Implementation Score (0–10) ──────────────────────────────────
+    # Measures how much code the developer has written (commit volume + repo count)
+    impl = 0.0
 
-    impl = min(impl + (repos * 0.1), 10.0)
+    # Commit volume (max 6 points)
+    if commits > 1000: impl += 6.0
+    elif commits > 500: impl += 5.0
+    elif commits > 200: impl += 4.0
+    elif commits > 100: impl += 3.0
+    elif commits > 50:  impl += 2.0
+    elif commits > 20:  impl += 1.5
+    elif commits > 5:   impl += 1.0
+    elif commits > 0:   impl += 0.5
 
-    # 2. Working Score (real project usability)
-    working = stats.get("working_score", 0.0)
+    # Repo count (max 4 points)
+    if repos > 30:   impl += 4.0
+    elif repos > 20: impl += 3.0
+    elif repos > 10: impl += 2.5
+    elif repos > 5:  impl += 2.0
+    elif repos > 3:  impl += 1.5
+    elif repos > 1:  impl += 1.0
+    elif repos > 0:  impl += 0.5
 
-    # 3. Impact Score (based on stars)
-    impact = 0
-    if stars > 100: impact += 10
-    elif stars > 50: impact += 8
-    elif stars > 20: impact += 6
-    elif stars > 5: impact += 4
-    elif stars > 0: impact += 2
-    
+    impl = min(impl, 10.0)
+
+    # ── 2. Working Score (0–10) — real project usability ─────────────────
+    working = min(stats.get("working_score", 0.0), 10.0)
+
+    # ── 3. Impact Score (0–10) — community interest / reach ──────────────
+    impact = 0.0
+
+    # Stars (max 8 points)
+    if stars > 500:   impact += 8.0
+    elif stars > 100: impact += 6.5
+    elif stars > 50:  impact += 5.0
+    elif stars > 20:  impact += 3.5
+    elif stars > 10:  impact += 2.5
+    elif stars > 5:   impact += 2.0
+    elif stars > 0:   impact += 1.0
+
+    # Repo count as secondary impact signal (max 2 points)
+    if repos > 20:   impact += 2.0
+    elif repos > 10: impact += 1.5
+    elif repos > 5:  impact += 1.0
+    elif repos > 0:  impact += 0.5
+
     impact = min(impact, 10.0)
 
+    # ── Final score: simple average of all three ──────────────────────────
     total = round((impl + working + impact) / 3.0, 2)
 
     rank = "Starter"
-    if total >= 9: rank = "Elite"
+    if total >= 9:   rank = "Elite"
     elif total >= 7: rank = "Advanced"
     elif total >= 5: rank = "Intermediate"
     elif total >= 3: rank = "Beginner"
 
     return {
-        "github_impl": round(impl, 1),
+        "github_impl":    round(impl, 1),
         "github_working": round(working, 1),
-        "github_impact": round(impact, 1),
-        "github_score": total,
-        "github_rank": rank
+        "github_impact":  round(impact, 1),
+        "github_score":   total,
+        "github_rank":    rank
     }

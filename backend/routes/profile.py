@@ -184,6 +184,23 @@ def update_profile(uid=None):
         if github_url:
             username = github_url.rstrip("/").split("/")[-1]
             profile.github_username = username
+            # Immediately fetch GitHub stats when URL is saved
+            try:
+                from utils.github_stats import get_github_stats, calculate_github_score
+                gh_stats = get_github_stats(username)
+                if gh_stats:
+                    profile.github_repos   = gh_stats.get("github_repos", 0)
+                    profile.github_stars   = gh_stats.get("github_stars", 0)
+                    profile.github_commits = gh_stats.get("github_commits", 0)
+                    scores = calculate_github_score(gh_stats)
+                    user.github_implementation = scores.get("github_impl", 0.0)
+                    user.github_working        = scores.get("github_working", 0.0)
+                    user.github_impact         = scores.get("github_impact", 0.0)
+                    user.github_score          = scores.get("github_score", 0.0)
+                    profile.github_rank        = scores.get("github_rank", "Starter")
+                    user.save()
+            except Exception as e:
+                current_app.logger.warning(f"[GITHUB SAVE] Could not fetch stats for {username}: {e}")
 
     profile.save()
     update_user_scores(str(user.id))
@@ -263,7 +280,8 @@ def refresh_profile(uid=None):
     api_failed = False
     try:
         gh_stats = get_github_stats(username)
-        if not gh_stats or (gh_stats.get("github_repos") == 0 and gh_stats.get("github_commits") == 0 and old_score > 0):
+        # Only treat as failed if the API completely errored out AND we have old data
+        if not gh_stats:
             api_failed = True
     except Exception as e:
         api_failed = True

@@ -136,7 +136,7 @@ function StatChip({ label, value }) {
 
 /* ─── Main Component ────────────────────────────────────────────────── */
 export default function GitHubScoreCard({ user }) {
-  const hasGitHubData = user && (user.github_score !== undefined || user.github_repos !== undefined);
+  const hasGitHubData = user && (user.github_username || user.github_score !== undefined || user.github_repos !== undefined);
   
   const containerStyle = {
     fontFamily: 'Sora, Inter, "DM Sans", sans-serif',
@@ -165,10 +165,11 @@ export default function GitHubScoreCard({ user }) {
     )
   }
 
-  const score = user.github_score || 0
-  const impl = user.github_implementation || 0
-  const working = user.github_working || 0
-  const impact = user.github_impact || 0
+  const score   = user.github_score || 0
+  // Support both field names: github_implementation (User model) and github_impl_score (Profile legacy)
+  const impl    = user.github_implementation ?? user.github_impl_score ?? 0
+  const working = user.github_working        ?? user.github_work_score ?? 0
+  const impact  = user.github_impact         ?? user.github_imp_score  ?? 0
   const username = user.github_username || ''
   
   return (

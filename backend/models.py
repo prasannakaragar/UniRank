@@ -6,14 +6,128 @@ db = MongoEngine()
 
 class College(db.Document):
     """
-    Registry of allowed college domains.
+    Registry of allowed college domains + detailed profile info.
     """
-    meta = {'collection': 'colleges'}
+    meta = {'collection': 'colleges', 'strict': False}
     name   = db.StringField(max_length=200, required=True)
     domain = db.StringField(max_length=100, unique=True, required=True)
+    
+    # Detailed profile fields
+    location        = db.StringField(max_length=200, default="India")
+    degree_type     = db.StringField(max_length=20, default="B.Tech")  # B.Tech / B.E / Both
+    highest_package = db.StringField(max_length=50, default="Data Not Available")
+    average_package = db.StringField(max_length=50, default="Data Not Available")
+    placement_rate  = db.StringField(max_length=20, default="Data Not Available")
+    total_offers    = db.IntField(default=0)
+    about           = db.StringField(default="")
+    highlight       = db.StringField(default="")
+    courses         = db.ListField(db.StringField(), default=list)
+    facilities      = db.ListField(db.StringField(), default=list)
+    recruiters      = db.ListField(db.StringField(), default=list)
+    campus_details  = db.StringField(default="")
+    image_url       = db.StringField(default="/default-college.jpg")
+    banner_url      = db.StringField(default="/default-college.jpg")
+    source          = db.StringField(max_length=300, default="")  # Official placement page URL
+    lpa_verified    = db.BooleanField(default=False)  # Whether LPA data is verified
 
     def to_dict(self):
-        return {"name": self.name, "domain": self.domain}
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "domain": self.domain,
+            "location": self.location,
+            "degree_type": self.degree_type or "B.Tech",
+            "highest_package": self.highest_package,
+            "average_package": self.average_package,
+            "placement_rate": self.placement_rate,
+            "total_offers": self.total_offers,
+            "about": self.about,
+            "highlight": self.highlight,
+            "courses": self.courses,
+            "facilities": self.facilities,
+            "recruiters": self.recruiters,
+            "campus_details": self.campus_details,
+            "image_url": self.image_url or "/default-college.jpg",
+            "banner_url": self.banner_url or "/default-college.jpg",
+            "source": self.source or "",
+            "lpa_verified": self.lpa_verified if hasattr(self, 'lpa_verified') else False
+        }
+
+
+class Internship(db.Document):
+    """
+    Internship and research opportunities scraped/generated from colleges.
+    """
+    meta = {
+        'collection': 'internships',
+        'strict': False,
+        'indexes': [
+            'college_name',
+            'opportunity_score',
+            'created_at'
+        ]
+    }
+    project_title       = db.StringField(max_length=200, required=True)
+    professor_name      = db.StringField(max_length=100, required=True)
+    professor_image     = db.StringField(default="")
+    college_name        = db.StringField(max_length=200, required=True)
+    college_domain      = db.StringField(max_length=100, required=True)
+    duration            = db.StringField(max_length=50, default="3 Months")
+    mode                = db.StringField(max_length=20, default="remote") # remote / on-site
+    stipend             = db.StringField(max_length=100, default="Unpaid")
+    stipend_amount      = db.IntField(default=0)
+    description         = db.StringField(required=True)
+    skills_required     = db.ListField(db.StringField(), default=list)
+    deadline            = db.StringField(max_length=50)
+    application_process = db.StringField(default="")
+    professor_email     = db.StringField(max_length=150, default="")
+    opportunity_score   = db.IntField(default=0)
+    created_at          = db.DateTimeField(default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "project_title": self.project_title,
+            "professor_name": self.professor_name,
+            "professor_image": self.professor_image,
+            "college_name": self.college_name,
+            "college_domain": self.college_domain,
+            "duration": self.duration,
+            "mode": self.mode,
+            "stipend": self.stipend,
+            "stipend_amount": self.stipend_amount,
+            "description": self.description,
+            "skills_required": self.skills_required,
+            "deadline": self.deadline,
+            "application_process": self.application_process,
+            "professor_email": self.professor_email,
+            "opportunity_score": self.opportunity_score,
+            "created_at": self.created_at.isoformat()
+        }
+
+
+class CrawlerLog(db.Document):
+    """
+    Log entries showing simulated background crawls of college websites.
+    """
+    meta = {
+        'collection': 'crawler_logs',
+        'strict': False,
+        'indexes': [
+            '-timestamp'
+        ]
+    }
+    message    = db.StringField(required=True)
+    college    = db.StringField(max_length=200, default="")
+    timestamp  = db.DateTimeField(default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": str(self.id),
+            "message": self.message,
+            "college": self.college,
+            "timestamp": self.timestamp.isoformat()
+        }
 
 
 class PendingUser(db.Document):
@@ -208,11 +322,16 @@ class Profile(db.Document):
                 "total": self.user.github_score,
                 "reason": self.github_review_reason
             },
-            # Flat fields used by leaderboard
-            "github_score": self.user.github_score,
-            "github_impl_score": self.user.github_implementation,
-            "github_imp_score": self.user.github_impact,
-            "github_work_score": self.user.github_working,
+            # Flat fields used by leaderboard and GitHubScoreCard
+            "github_score":          self.user.github_score,
+            # Primary names (match User model and frontend expectations)
+            "github_implementation": self.user.github_implementation,
+            "github_working":        self.user.github_working,
+            "github_impact":         self.user.github_impact,
+            # Legacy names kept for backward compat
+            "github_impl_score":     self.user.github_implementation,
+            "github_imp_score":      self.user.github_impact,
+            "github_work_score":     self.user.github_working,
         }
 
 
