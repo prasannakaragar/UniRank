@@ -41,6 +41,32 @@ MAX_OTP_ATTEMPTS         = 5    # OTP failures before record is wiped
 MAX_LOGIN_ATTEMPTS       = 5    # Wrong passwords before account lock
 LOCKOUT_DURATION_MINUTES = 15   # How long the lock lasts
 
+# Known college domains that don't follow standard .edu / .ac.in patterns.
+# Add any legitimate college domain here so students can register.
+KNOWN_COLLEGE_DOMAINS = {
+    # BMSIT&M – BMS Institute of Technology and Management
+    "bmsit.in",
+    # Other known Indian college domains using .in / .org / custom TLDs
+    "bmsce.in",
+    "rvce.edu.in",
+    "msrit.edu",
+    "pes.edu",
+    "dsce.edu.in",
+    "sjce.ac.in",
+    "nie.ac.in",
+    "reva.edu.in",
+    "cmrit.ac.in",
+    "nmit.ac.in",
+    "sit.ac.in",
+    "kletech.ac.in",
+    "manipal.edu",
+    "vit.ac.in",
+    "srmist.edu.in",
+    "amrita.edu",
+    "bits-pilani.ac.in",
+    "gmail.com",
+}
+
 
 # ---------------------------------------------------------------------------
 # Rate-limit decorator factory
@@ -71,7 +97,8 @@ def _is_college_email(email: str) -> bool:
     """
     Accept only college emails.
     Rule: domain contains '.edu' or '.ac.in', OR it exists in the colleges
-    collection (for custom-registered domains), OR it explicitly contains 'iit' or 'nit'.
+    collection (for custom-registered domains), OR it explicitly contains 'iit' or 'nit',
+    OR the full domain is in the KNOWN_COLLEGE_DOMAINS whitelist.
     """
     domain = email.split("@")[-1].lower()
     
@@ -81,7 +108,11 @@ def _is_college_email(email: str) -> bool:
         
     if ".edu" in domain or ".ac.in" in domain:
         return True
-        
+
+    # Known Indian college domains that use non-standard TLDs (e.g. .in instead of .ac.in)
+    if domain in KNOWN_COLLEGE_DOMAINS:
+        return True
+
     return bool(College.objects(domain=domain).first())
 
 
