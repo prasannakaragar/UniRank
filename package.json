@@ -1,0 +1,13 @@
+{
+  "name": "unirank-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix backend"
+  }
+}
