@@ -81,7 +81,7 @@ export function createApp() {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  app.get('/', (_req, res) => {
+  app.get('/api', (_req, res) => {
     res.send('UniRank Express API is running');
   });
 
