@@ -7,9 +7,19 @@ const connectDB = async () => {
     return;
   }
 
-  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/unirank';
+  const uri = process.env.MONGO_URI;
+
+  if (!uri && process.env.VERCEL) {
+    console.error('CRITICAL: MONGO_URI environment variable is missing in Vercel Project Settings!');
+    throw new Error('MONGO_URI environment variable is missing in Vercel Project Settings.');
+  }
+
+  const finalUri = uri || 'mongodb://localhost:27017/unirank';
+
   try {
-    const db = await mongoose.connect(uri);
+    const db = await mongoose.connect(finalUri, {
+      serverSelectionTimeoutMS: 5000,
+    });
     isConnected = db.connections[0].readyState >= 1;
     console.log(`INFO: MongoDB connected — ${mongoose.connection.host}`);
   } catch (err) {

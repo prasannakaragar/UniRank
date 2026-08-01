@@ -367,8 +367,8 @@ router.post('/login', loginLimiter, async (req, res) => {
     const userDict = await user.toDict();
     return res.status(200).json({ token, user: userDict });
   } catch (err) {
-    console.error('[LOGIN] Error:', err.message);
-    return res.status(500).json({ error: 'Internal server error.' });
+    console.error('[LOGIN] Error:', err.message || err);
+    return res.status(500).json({ error: err.message || 'Internal server error.' });
   }
 });
 
