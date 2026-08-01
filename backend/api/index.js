@@ -3,13 +3,19 @@ import { createApp } from '../src/app.js';
 import { ensureCollegeIndexSeeded } from '../src/scripts/seedCollegeIndex.js';
 
 let appInstance = null;
+let isIndexSeeded = false;
 
 export default async function handler(req, res) {
   try {
     await connectDB();
-    await ensureCollegeIndexSeeded();
+    if (!isIndexSeeded) {
+      isIndexSeeded = true;
+      ensureCollegeIndexSeeded().catch((err) =>
+        console.error('Background college index seed error:', err)
+      );
+    }
   } catch (err) {
-    console.error('Failed to initialize database connection or college index:', err);
+    console.error('Failed to initialize database connection:', err);
   }
 
   if (!appInstance) {

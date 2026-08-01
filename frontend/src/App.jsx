@@ -1,17 +1,15 @@
-import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
-
-const Login = lazy(() => import('./pages/Login'))
-const Register = lazy(() => import('./pages/Register'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Leaderboard = lazy(() => import('./pages/Leaderboard'))
-const Announcements = lazy(() => import('./pages/Announcements'))
-const Teams = lazy(() => import('./pages/Teams'))
-const Profile = lazy(() => import('./pages/Profile'))
-const Chats = lazy(() => import('./pages/Chats'))
-const Discovery = lazy(() => import('./pages/Discovery'))
+import Login from './pages/Login'
+import Register from './pages/Register'
+import Dashboard from './pages/Dashboard'
+import Leaderboard from './pages/Leaderboard'
+import Announcements from './pages/Announcements'
+import Teams from './pages/Teams'
+import Profile from './pages/Profile'
+import Chats from './pages/Chats'
+import Discovery from './pages/Discovery'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -47,12 +45,7 @@ function PublicRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <Suspense fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        </div>
-      }>
-        <Routes>
+      <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
@@ -72,10 +65,9 @@ export default function App() {
           <Route path="/profile/:id"   element={<Profile />} />
         </Route>
 
-        {/* Catch-all or 404 could go here */}
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Suspense>
+      </Routes>
     </AuthProvider>
   )
 }

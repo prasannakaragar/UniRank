@@ -14,7 +14,12 @@ export function AuthProvider({ children }) {
     if (!token) { setLoading(false); return }
 
     if (savedUser) {
-      setUser(JSON.parse(savedUser))
+      try {
+        setUser(JSON.parse(savedUser))
+        setLoading(false)
+      } catch {
+        // Ignore parse errors
+      }
     }
 
     api.get('/profile')
@@ -25,6 +30,7 @@ export function AuthProvider({ children }) {
       .catch(() => {
         localStorage.removeItem('token')
         localStorage.removeItem('auth_user')
+        setUser(null)
       })
       .finally(() => setLoading(false))
       
