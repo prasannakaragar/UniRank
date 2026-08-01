@@ -37,6 +37,8 @@ export function createApp() {
     'http://localhost:3000',
     'http://127.0.0.1:5173',
     'http://127.0.0.1:3000',
+    'https://uni-rank-chi.vercel.app',
+    'https://uni-rank-yfuc.vercel.app',
     ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : []),
     ...(process.env.FRONTEND_URL_2 ? [process.env.FRONTEND_URL_2.trim()] : []),
   ].filter(Boolean);
@@ -44,11 +46,10 @@ export function createApp() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl)
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
           callback(null, true);
         } else {
-          callback(null, true); // Permissive in dev, or filter explicitly
+          callback(null, true);
         }
       },
       credentials: true,
