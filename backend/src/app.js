@@ -77,13 +77,16 @@ export function createApp() {
   app.use('/api/static/uploads', express.static(uploadsPath));
   app.use('/static/uploads', express.static(uploadsPath));
 
+  // Favicon handler to avoid 404 log spam on Vercel
+  app.get(['/favicon.ico', '/favicon.png'], (_req, res) => res.status(204).end());
+
   // Health check endpoint
   app.get('/api/health', (_req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  app.get('/api', (_req, res) => {
-    res.send('UniRank Express API is running');
+  app.get(['/', '/api'], (_req, res) => {
+    res.status(200).json({ status: 'ok', service: 'UniRank Express Backend API' });
   });
 
   // Mount API routes under /api
