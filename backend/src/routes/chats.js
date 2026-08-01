@@ -452,56 +452,7 @@ router.post('/chats/:conv_id/read', verifyToken, async (req, res) => {
   }
 });
 
-// ── POST /api/chats/:conv_id/members ───────────────────────────────
-router.post('/chats/:conv_id/members', verifyToken, async (req, res) => {
-  try {
-    const { conv_id } = req.params;
-    const conv = await Conversation.findById(conv_id);
-    if (!conv || conv.kind !== 'group') return res.status(404).json({ error: 'Group not found' });
 
-    const caller = conv.getMember(req.userId);
-    if (!caller || !caller.is_admin) {
-      return res.status(403).json({ error: 'Only admins can add members' });
-    }
-
-    const data = req.body || {};
-    const targetId = data.user_id;
-    const target = await User.findById(targetId);
-    if (!target) return res.status(404).json({ error: 'User not found' });
-    if (isMember(conv, targetId)) return res.status(409).json({ error: 'Already a member' });
-
-    conv.members.push({ user: target._id, is_admin: false });
-    await conv.save();
-    await conv.populate('members.user');
-
-    return res.status(200).json({ ok: true, conversation: conv.toDict(req.userId) });
-  } catch (err) {
-    console.error('[POST /chats/:conv_id/members] Error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ── DELETE /api/chats/:conv_id/members/:target_uid ─────────────────
-router.delete('/chats/:conv_id/members/:target_uid', verifyToken, async (req, res) => {
-  try {
-    const { conv_id, target_uid } = req.params;
-    const conv = await Conversation.findById(conv_id);
-    if (!conv || conv.kind !== 'group') return res.status(404).json({ error: 'Group not found' });
-
-    const caller = conv.getMember(req.userId);
-    if (!caller || (String(target_uid) !== String(req.userId) && !caller.is_admin)) {
-      return res.status(403).json({ error: 'Not authorised' });
-    }
-
-    conv.members = conv.members.filter((m) => m.user.toString() !== String(target_uid));
-    await conv.save();
-
-    return res.status(200).json({ ok: true });
-  } catch (err) {
-    console.error('[DELETE /chats/:conv_id/members/:target_uid] Error:', err.message);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // ── GET /api/chats/search/users ────────────────────────────────────
 router.get('/chats/search/users', verifyToken, async (req, res) => {
@@ -682,7 +633,13 @@ router.post('/chats/:conv_id/members', verifyToken, async (req, res) => {
     }
 
     const data = req.body || {};
-    const memberIds = Array.isArray(data.member_ids) ? data.member_ids.map(String) : [];
+    let memberIds = [];
+    if (Array.isArray(data.member_ids)) {
+      memberIds = data.member_ids.map(String);
+    } else if (data.user_id) {
+      memberIds = [String(data.user_id)];
+    }
+
     if (!memberIds.length) return res.status(400).json({ error: 'No members provided' });
 
     let addedCount = 0;
@@ -705,7 +662,11 @@ router.post('/chats/:conv_id/members', verifyToken, async (req, res) => {
       io.to(conv_id).emit('group_updated', { conversation_id: conv_id });
     }
 
-    return res.status(200).json({ message: `Added ${addedCount} member(s)`, conversation: conv.toDict(req.userId) });
+    return res.status(200).json({
+      ok: true,
+      message: `Added ${addedCount} member(s)`,
+      conversation: conv.toDict(req.userId),
+    });
   } catch (err) {
     console.error('[POST /chats/:conv_id/members] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
