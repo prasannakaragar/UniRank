@@ -97,6 +97,21 @@ export function createApp() {
   app.use('/api', uploadsRoutes);
   app.use('/api', discoveryRoutes);
 
+  // Serve compiled React frontend if present
+  const frontendDistPath = path.resolve('frontend/dist');
+  const altFrontendDistPath = path.resolve('../frontend/dist');
+  const distPath = fs.existsSync(frontendDistPath)
+    ? frontendDistPath
+    : (fs.existsSync(altFrontendDistPath) ? altFrontendDistPath : null);
+
+  if (distPath) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
   // 404 handler
   app.use((_req, res) => {
     res.status(404).json({ error: 'Endpoint not found' });
