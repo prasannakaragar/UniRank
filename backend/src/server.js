@@ -34,7 +34,7 @@ async function startServer() {
         execSync(`lsof -ti:${PORT} | xargs kill -9 2>/dev/null || true`);
         console.log(`[SERVER] Conflicting process cleared. Retrying port ${PORT} in 500ms...`);
         setTimeout(() => {
-          server.listen(PORT);
+          server.listen(PORT, '0.0.0.0');
         }, 500);
       } catch (killErr) {
         console.error(`[SERVER] Failed to auto-clear port ${PORT}:`, killErr.message);
@@ -46,11 +46,11 @@ async function startServer() {
     }
   });
 
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`==================================================`);
     console.log(`  UniRank Express Server running on port ${PORT}`);
     console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`  Healthcheck: http://localhost:${PORT}/api/health`);
+    console.log(`  Healthcheck: http://0.0.0.0:${PORT}/api/health`);
     console.log(`==================================================`);
 
     // Start background crawler daemon

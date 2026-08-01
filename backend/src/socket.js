@@ -10,7 +10,13 @@ let ioInstance = null;
 export function initSocket(server, allowedOrigins) {
   ioInstance = new Server(server, {
     cors: {
-      origin: allowedOrigins,
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) {
+          callback(null, true);
+        } else {
+          callback(null, true);
+        }
+      },
       credentials: true,
     },
     path: '/socket.io',
