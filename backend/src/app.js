@@ -43,18 +43,23 @@ export function createApp() {
     ...(process.env.FRONTEND_URL_2 ? [process.env.FRONTEND_URL_2.trim()] : []),
   ].filter(Boolean);
 
-  app.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
-          callback(null, true);
-        } else {
-          callback(null, true);
-        }
-      },
-      credentials: true,
-    })
-  );
+  // Bulletproof CORS setup allowing Vercel and Render origins with credentials
+  const corsOptions = {
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl) or any domain (.vercel.app, .onrender.com, etc.)
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.onrender.com')) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  };
+
+  app.use(cors(corsOptions));
+  app.options('*', cors(corsOptions));
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
