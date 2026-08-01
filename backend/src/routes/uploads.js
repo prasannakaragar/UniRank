@@ -10,14 +10,23 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '../middleware/auth.js';
 
+import os from 'os';
+
 const router = Router();
 
 const ALLOWED_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
-const uploadDir = path.resolve('static/uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = process.env.VERCEL
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.resolve('static/uploads');
+
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn('[UPLOADS] Could not create uploads directory:', err.message);
 }
 
 const storage = multer.diskStorage({

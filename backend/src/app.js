@@ -7,6 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import dotenv from 'dotenv';
 import { globalLimiter } from './middleware/rateLimiter.js';
 
@@ -60,10 +61,17 @@ export function createApp() {
   // Global rate limiter
   app.use(globalLimiter);
 
-  // Serve static files from static/uploads
-  const uploadsPath = path.resolve('static/uploads');
-  if (!fs.existsSync(uploadsPath)) {
-    fs.mkdirSync(uploadsPath, { recursive: true });
+  // Serve static files from static/uploads (or /tmp/uploads in serverless)
+  const uploadsPath = process.env.VERCEL
+    ? path.join(os.tmpdir(), 'uploads')
+    : path.resolve('static/uploads');
+
+  try {
+    if (!fs.existsSync(uploadsPath)) {
+      fs.mkdirSync(uploadsPath, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('[APP] Could not create static uploads directory:', err.message);
   }
   app.use('/api/static/uploads', express.static(uploadsPath));
   app.use('/static/uploads', express.static(uploadsPath));
