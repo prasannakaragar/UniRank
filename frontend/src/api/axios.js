@@ -1,9 +1,17 @@
 import axios from 'axios'
 
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (!envUrl || envUrl.includes('onrender.com') || envUrl === '/api') {
+    return 'https://uni-rank-yfuc.vercel.app/api';
+  }
+  return envUrl;
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: getApiBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
-})
+});
 
 // Attach JWT token to every request
 api.interceptors.request.use(config => {
