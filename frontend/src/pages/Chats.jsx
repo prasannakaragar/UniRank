@@ -71,19 +71,69 @@ export default function Chats() {
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [groupName, setGroupName]           = useState('')
   const [groupDesc, setGroupDesc]           = useState('')
+  const [groupPhoto, setGroupPhoto]         = useState('')
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [selectedMembers, setSelectedMembers] = useState([])
   
-  // Info Panel & Media
+  // Add Members Modal
+  const [showAddMembersModal, setShowAddMembersModal] = useState(false)
+  const [addMembersSelected, setAddMembersSelected]   = useState([])
+  const [addingMembers, setAddingMembers]             = useState(false)
+  
+  // Info Panel, Media & Resizing
   const [showInfoPanel, setShowInfoPanel] = useState(false)
   const [sharedMedia, setSharedMedia]     = useState([])
   const [loadingMedia, setLoadingMedia]   = useState(false)
   const [lightboxImage, setLightboxImage] = useState(null)
   const [otherProfile, setOtherProfile]   = useState(null)
+  const [memberMenuId, setMemberMenuId]   = useState(null)
+  
+  // Resizable Panel & Reactive Mobile Drawer State
+  const [infoPanelWidth, setInfoPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('unirank_chat_info_width')
+    return saved ? Math.min(480, Math.max(280, parseInt(saved, 10))) : 340
+  })
+  const [isResizing, setIsResizing] = useState(false)
+  const [isMobile, setIsMobile]     = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+
+  useEffect(() => {
+    let timeoutId = null
+    const handleResize = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        setIsMobile(window.innerWidth < 768)
+      }, 150)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
+
+  const handleMouseDownResize = (e) => {
+    e.preventDefault()
+    setIsResizing(true)
+    const handleMouseMove = (moveEvent) => {
+      const newWidth = window.innerWidth - moveEvent.clientX
+      const clamped = Math.min(480, Math.max(280, newWidth))
+      setInfoPanelWidth(clamped)
+      localStorage.setItem('unirank_chat_info_width', clamped.toString())
+    }
+    const handleMouseUp = () => {
+      setIsResizing(false)
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }
   
   // Group editing
   const [editingGroup, setEditingGroup] = useState(false)
   const [editName, setEditName]         = useState('')
   const [editDesc, setEditDesc]         = useState('')
+  const [editPhoto, setEditPhoto]       = useState('')
 
   const bottomRef  = useRef(null)
   const inputRef   = useRef(null)
@@ -364,10 +414,12 @@ export default function Chats() {
   
   const saveGroupInfo = async () => {
     try {
-        await api.patch(`/chats/${activeConv.id}`, { name: editName, description: editDesc })
-        setEditingGroup(false)
+      const res = await api.patch(`/chats/${activeConv.id}`, { name: editName, description: editDesc, group_photo: editPhoto })
+      setActiveConv(res.data.conversation)
+      setConversations(prev => prev.map(c => c.id === activeConv.id ? res.data.conversation : c))
+      setEditingGroup(false)
     } catch (err) {
-        alert(err.response?.data?.error || 'Failed to update group')
+      alert(err.response?.data?.error || 'Failed to update group')
     }
   }
 
@@ -424,15 +476,78 @@ export default function Chats() {
       const r = await api.post('/chats/group', {
         name: groupName,
         description: groupDesc,
+        group_photo: groupPhoto,
         member_ids: selectedMembers.map(u => u.user_id),
       })
       const conv = r.data.conversation
       setConversations(prev => [conv, ...prev])
       setActiveConv(conv)
       setShowGroupModal(false)
-      setGroupName(''); setGroupDesc(''); setSelectedMembers([])
+      setGroupName(''); setGroupDesc(''); setGroupPhoto(''); setSelectedMembers([])
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to create group')
+    }
+  }
+
+  /* ── group management handlers ── */
+  const handleToggleAdmin = async (targetUid, currentIsAdmin) => {
+    if (!activeConv) return
+    const actionLabel = currentIsAdmin ? 'Dismiss as Admin?' : 'Make Admin?'
+    if (!window.confirm(actionLabel)) return
+    try {
+      const res = await api.patch(`/chats/${activeConv.id}/admins/${targetUid}`, { is_admin: !currentIsAdmin })
+      setActiveConv(res.data.conversation)
+      setConversations(prev => prev.map(c => c.id === activeConv.id ? res.data.conversation : c))
+      setMemberMenuId(null)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to update admin status')
+    }
+  }
+
+  const handleRemoveMember = async (targetUid, targetName) => {
+    if (!activeConv) return
+    if (!window.confirm(`Remove ${targetName} from group?`)) return
+    try {
+      const res = await api.delete(`/chats/${activeConv.id}/members/${targetUid}`)
+      if (res.data.conversation) {
+        setActiveConv(res.data.conversation)
+        setConversations(prev => prev.map(c => c.id === activeConv.id ? res.data.conversation : c))
+      }
+      setMemberMenuId(null)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to remove member')
+    }
+  }
+
+  const handleAddMembersSubmit = async () => {
+    if (!activeConv || addMembersSelected.length === 0) return
+    setAddingMembers(true)
+    try {
+      const res = await api.post(`/chats/${activeConv.id}/members`, {
+        member_ids: addMembersSelected.map(m => m.user_id)
+      })
+      setActiveConv(res.data.conversation)
+      setConversations(prev => prev.map(c => c.id === activeConv.id ? res.data.conversation : c))
+      setShowAddMembersModal(false)
+      setAddMembersSelected([])
+      setSearchQ('')
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to add members')
+    } finally {
+      setAddingMembers(false)
+    }
+  }
+
+  const handleLeaveGroup = async () => {
+    if (!activeConv || activeConv.kind !== 'group') return
+    if (!window.confirm('Are you sure you want to leave this group?')) return
+    try {
+      await api.delete(`/chats/${activeConv.id}/members/${user.id}`)
+      setConversations(prev => prev.filter(c => c.id !== activeConv.id))
+      setActiveConv(null)
+      setShowInfoPanel(false)
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to leave group')
     }
   }
 
@@ -833,20 +948,48 @@ export default function Chats() {
         )}
       </main>
 
-      {/* ══ RIGHT: Info Panel ══ */}
-      {showInfoPanel && activeConv && (
-        <aside className="w-[340px] bg-white border-l border-border-dim flex flex-col shrink-0 animate-in slide-in-from-right duration-300">
+      {/* ══ RIGHT: Info Panel & Mobile Drawer ══ */}
+      {isMobile && showInfoPanel && (
+        <div
+          onClick={() => setShowInfoPanel(false)}
+          className="fixed inset-0 bg-black/40 z-40 animate-in fade-in duration-200"
+        />
+      )}
+
+      {activeConv && (
+        <aside
+          style={!isMobile && showInfoPanel ? { width: `${infoPanelWidth}px` } : undefined}
+          className={`${
+            isMobile
+              ? `fixed inset-y-0 right-0 z-50 w-full sm:w-[360px] transform transition-transform duration-300 ease-in-out ${
+                  showInfoPanel ? 'translate-x-0 shadow-2xl' : 'translate-x-full pointer-events-none'
+                }`
+              : `${showInfoPanel ? 'flex' : 'hidden'} relative z-30 max-w-full`
+          } bg-white border-l border-border-dim flex-col shrink-0`}
+        >
+          {/* Draggable Left Resize Handle (Desktop Only) */}
+          {!isMobile && (
+            <div
+              onMouseDown={handleMouseDownResize}
+              className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-primary/40 active:bg-primary z-40 group transition-colors -ml-1"
+              title="Drag to resize panel"
+            >
+              <div className="w-1 h-8 bg-gray-300 group-hover:bg-primary rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transition-colors" />
+            </div>
+          )}
+
           <div className="px-6 py-5 border-b border-border-dim flex items-center justify-between bg-white sticky top-0 z-10">
             <h3 className="font-bold text-text-primary uppercase tracking-widest text-[11px]">Chat Info</h3>
             <button 
               onClick={() => setShowInfoPanel(false)}
-              className="w-8 h-8 rounded-lg hover:bg-gray-100 text-text-secondary transition-colors"
+              className="w-8 h-8 rounded-lg hover:bg-gray-100 text-text-secondary transition-colors flex items-center justify-center font-bold"
+              title="Close panel"
             >✕</button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {/* Header / Avatar */}
-            <div className="flex flex-col items-center py-10 px-8 text-center border-b border-dashed border-border-dim">
+            <div className="flex flex-col items-center py-8 px-6 text-center border-b border-dashed border-border-dim">
               {activeConv.kind === 'dm' ? (
                 <>
                   <div className="w-24 h-24 rounded-full bg-primary/5 border-2 border-primary/20 flex items-center justify-center mb-4 overflow-hidden shadow-lg">
@@ -856,7 +999,7 @@ export default function Chats() {
                       <span className="text-3xl font-black text-primary">{convName(activeConv)[0]}</span>
                     )}
                   </div>
-                  <h4 className="text-xl font-bold text-text-primary">{convName(activeConv)}</h4>
+                  <h4 className="text-xl font-bold text-text-primary truncate max-w-[240px]" title={convName(activeConv)}>{convName(activeConv)}</h4>
                   <p className="text-sm font-medium text-text-secondary mt-1">{otherProfile?.cf_handle ? `@${otherProfile.cf_handle}` : ''}</p>
                   <div className="mt-4 flex flex-wrap justify-center gap-2">
                     <span className="px-3 py-1 rounded-full bg-gray-100 text-[10px] font-bold text-text-secondary border border-border-dim uppercase tracking-wider">
@@ -866,8 +1009,38 @@ export default function Chats() {
                 </>
               ) : (
                 <>
-                  <div className="w-24 h-24 rounded-2xl bg-primary text-white flex items-center justify-center mb-4 shadow-lg text-4xl">
-                    <UsersIcon size={40} />
+                  <div className="relative group mb-6">
+                    <div className="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center overflow-hidden shadow-lg">
+                      {activeConv.group_photo ? (
+                        <img src={activeConv.group_photo} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-3xl font-black text-primary">{activeConv.name?.[0]?.toUpperCase() || 'G'}</span>
+                      )}
+                    </div>
+                    {activeConv.members?.find(m => m.user_id === user?.id)?.is_admin && (
+                      <label className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center cursor-pointer shadow-md hover:brightness-110 transition-all" title="Change group photo">
+                        <span className="text-xs">📷</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            try {
+                              const res = await api.post('/upload/image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                              await api.patch(`/chats/${activeConv.id}`, { group_photo: res.data.url });
+                              setActiveConv(prev => ({ ...prev, group_photo: res.data.url }));
+                              setConversations(prev => prev.map(c => c.id === activeConv.id ? { ...c, group_photo: res.data.url } : c));
+                            } catch (err) {
+                              alert(err.response?.data?.error || 'Photo upload failed');
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
                   {editingGroup ? (
                     <div className="space-y-3 w-full">
@@ -890,18 +1063,19 @@ export default function Chats() {
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xl font-bold text-text-primary">{activeConv.name}</h4>
+                      <div className="flex items-center justify-center gap-2 w-full px-4">
+                        <h4 className="text-xl font-bold text-text-primary truncate max-w-[240px]" title={activeConv.name}>{activeConv.name}</h4>
                         {activeConv.members?.find(m => m.user_id === user?.id)?.is_admin && (
                           <button 
-                            onClick={() => { setEditName(activeConv.name); setEditDesc(activeConv.description || ''); setEditingGroup(true) }}
-                            className="text-text-secondary hover:text-primary transition-colors"
+                            onClick={() => { setEditName(activeConv.name); setEditDesc(activeConv.description || ''); setEditPhoto(activeConv.group_photo || ''); setEditingGroup(true) }}
+                            className="text-text-secondary hover:text-primary transition-colors shrink-0"
+                            title="Edit group details"
                           >
                             <EditIcon size={14} />
                           </button>
                         )}
                       </div>
-                      <p className="text-sm font-medium text-text-secondary mt-2 max-w-[200px] leading-relaxed italic">{activeConv.description || 'No description set'}</p>
+                      <p className="text-sm font-medium text-text-secondary mt-2.5 px-4 max-w-full leading-relaxed italic break-words text-center">{activeConv.description || 'No description set'}</p>
                     </>
                   )}
                 </>
@@ -913,26 +1087,68 @@ export default function Chats() {
               <div className="p-6 border-b border-dashed border-border-dim">
                 <div className="flex items-center justify-between mb-4">
                   <h5 className="section-label">MEMBERS ({activeConv.members?.length})</h5>
+                  {activeConv.members?.find(m => m.user_id === user?.id)?.is_admin && (
+                    <button
+                      onClick={() => { setShowAddMembersModal(true); setAddMembersSelected([]); setSearchQ('') }}
+                      className="text-primary text-xs font-extrabold hover:underline flex items-center gap-1"
+                    >
+                      + ADD MEMBERS
+                    </button>
+                  )}
                 </div>
-                <div className="space-y-3">
-                  {activeConv.members?.map(m => (
-                    <div key={m.user_id} className="flex items-center gap-3">
-                      <Avatar name={m.name} size={8} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-bold text-text-primary truncate">{m.name}</p>
-                        <p className="text-[11px] text-text-secondary font-medium truncate">{m.branch} · Y{m.year}</p>
+                <div className="space-y-2">
+                  {activeConv.members?.map(m => {
+                    const currentIsAdmin = activeConv.members?.find(x => x.user_id === user?.id)?.is_admin;
+                    const isSelf = m.user_id === user?.id;
+                    return (
+                      <div key={m.user_id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50/80 border border-transparent hover:border-border-dim/50 transition-all relative">
+                        <Avatar name={m.name} size={8} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-bold text-text-primary truncate" title={m.name}>
+                            {m.name} {isSelf && <span className="text-[10px] text-text-secondary font-normal">(You)</span>}
+                          </p>
+                          <p className="text-[11px] text-text-secondary font-medium truncate">
+                            {m.branch} · Y{m.year}
+                          </p>
+                        </div>
+                        {m.is_admin && (
+                          <span className="text-[9px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 uppercase tracking-tighter">Admin</span>
+                        )}
+                        {currentIsAdmin && !isSelf && (
+                          <div className="relative">
+                            <button
+                              onClick={() => setMemberMenuId(memberMenuId === m.user_id ? null : m.user_id)}
+                              className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-text-secondary"
+                            >
+                              <DotsIcon size={14} />
+                            </button>
+                            {memberMenuId === m.user_id && (
+                              <div className="absolute right-0 top-8 z-30 bg-white border border-border-dim rounded-xl shadow-xl py-1 w-40 text-xs font-bold animate-in fade-in zoom-in-95">
+                                <button
+                                  onClick={() => handleToggleAdmin(m.user_id, m.is_admin)}
+                                  className="w-full text-left px-4 py-2 hover:bg-gray-50 text-text-primary"
+                                >
+                                  {m.is_admin ? 'Dismiss as Admin' : 'Make Admin'}
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveMember(m.user_id, m.name)}
+                                  className="w-full text-left px-4 py-2 hover:bg-danger/5 text-danger border-t border-border-dim"
+                                >
+                                  Remove from Group
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      {m.is_admin && (
-                        <span className="text-[9px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 uppercase tracking-tighter">Admin</span>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
 
             {/* Shared Media */}
-            <div className="p-6">
+            <div className="p-6 border-b border-dashed border-border-dim">
               <h5 className="section-label mb-4">SHARED MEDIA</h5>
               
               {loadingMedia ? (
@@ -942,7 +1158,7 @@ export default function Chats() {
                   ))}
                 </div>
               ) : sharedMedia.length === 0 ? (
-                <div className="bg-gray-50 rounded-xl py-10 px-6 text-center border border-border-dim border-dashed">
+                <div className="bg-gray-50 rounded-xl py-8 px-6 text-center border border-border-dim border-dashed">
                   <p className="text-xs font-bold text-text-secondary/50 italic">No media shared yet</p>
                 </div>
               ) : (
@@ -962,6 +1178,18 @@ export default function Chats() {
                 </div>
               )}
             </div>
+
+            {/* Leave Group Action */}
+            {activeConv.kind === 'group' && (
+              <div className="p-6">
+                <button
+                  onClick={handleLeaveGroup}
+                  className="w-full py-3 bg-danger/5 hover:bg-danger/10 text-danger border border-danger/20 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-2"
+                >
+                  🚪 LEAVE GROUP
+                </button>
+              </div>
+            )}
           </div>
         </aside>
       )}
@@ -994,16 +1222,122 @@ export default function Chats() {
         </div>
       )}
 
+      {/* ══ Add Members Modal ══ */}
+      {showAddMembersModal && activeConv && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white border border-border-dim rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-text-primary">Add Members</h2>
+              <button
+                onClick={() => { setShowAddMembersModal(false); setAddMembersSelected([]); setSearchQ('') }}
+                className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors"
+              >✕</button>
+            </div>
+            <div className="space-y-4">
+              <input
+                className="input"
+                placeholder="Search users by name or email…"
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+                autoFocus
+              />
+              <div className="max-h-52 overflow-y-auto space-y-1 border border-border-dim rounded-xl p-1 bg-gray-50">
+                {searching && <p className="text-xs text-text-secondary p-2 font-medium">Searching…</p>}
+                {searchResults
+                  .filter(u => !activeConv.members?.some(m => m.user_id === u.user_id) && !addMembersSelected.some(s => s.user_id === u.user_id))
+                  .map(u => (
+                    <button
+                      type="button"
+                      key={u.user_id}
+                      onClick={() => setAddMembersSelected(prev => [...prev, u])}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white border border-transparent hover:border-border-dim text-left transition-all"
+                    >
+                      <Avatar name={u.name} size={8} />
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm font-bold text-text-primary block truncate">{u.name}</span>
+                        <span className="text-xs text-text-secondary font-medium">{u.branch} · Y{u.year}</span>
+                      </div>
+                      <span className="text-primary text-xs font-black">+ ADD</span>
+                    </button>
+                  ))}
+              </div>
+              {addMembersSelected.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {addMembersSelected.map(m => (
+                    <span key={m.user_id} className="flex items-center gap-1.5 bg-primary/5 text-primary text-xs px-3 py-1.5 rounded-full border border-primary/20 font-bold">
+                      {m.name}
+                      <button type="button" onClick={() => setAddMembersSelected(prev => prev.filter(s => s.user_id !== m.user_id))} className="hover:text-danger font-extrabold ml-0.5">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddMembersModal(false); setAddMembersSelected([]); setSearchQ('') }}
+                  className="btn-secondary flex-1 py-3"
+                >Cancel</button>
+                <button
+                  type="button"
+                  disabled={addMembersSelected.length === 0 || addingMembers}
+                  onClick={handleAddMembersSubmit}
+                  className="btn-primary flex-1 py-3"
+                >
+                  {addingMembers ? 'Adding…' : `Add ${addMembersSelected.length} Member(s)`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ Group creation modal ══ */}
       {showGroupModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
           <div className="bg-white border border-border-dim rounded-2xl p-8 w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-text-primary">Create Group Chat</h2>
-              <button onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc('') }}
+              <button onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc(''); setGroupPhoto('') }}
                 className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors">✕</button>
             </div>
-            <form onSubmit={createGroup} className="space-y-6">
+            <form onSubmit={createGroup} className="space-y-5">
+              {/* WhatsApp-Style Circular Group Photo Upload */}
+              <div className="flex flex-col items-center justify-center mb-2">
+                <label className="relative cursor-pointer group">
+                  <div className="w-20 h-20 rounded-full bg-gray-100 border-2 border-dashed border-border-dim hover:border-primary flex items-center justify-center overflow-hidden transition-all shadow-sm">
+                    {groupPhoto ? (
+                      <img src={groupPhoto} alt="Group avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-text-secondary group-hover:text-primary transition-colors">
+                        <span className="text-xl mb-0.5">📷</span>
+                        <span className="text-[9px] font-black tracking-wider">ADD PHOTO</span>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploadingPhoto(true);
+                      const formData = new FormData();
+                      formData.append('file', file);
+                      try {
+                        const res = await api.post('/upload/image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                        setGroupPhoto(res.data.url);
+                      } catch (err) {
+                        alert(err.response?.data?.error || 'Photo upload failed');
+                      } finally {
+                        setUploadingPhoto(false);
+                      }
+                    }}
+                  />
+                </label>
+                {uploadingPhoto && <span className="text-[11px] text-primary font-bold mt-1">Uploading photo…</span>}
+              </div>
+
               <div>
                 <label className="section-label block mb-2">Group Name *</label>
                 <input className="input" placeholder="e.g. CP Study Group" value={groupName} onChange={e => setGroupName(e.target.value)} required />
@@ -1046,7 +1380,7 @@ export default function Chats() {
                 )}
               </div>
               <div className="flex gap-4 pt-2">
-                <button type="button" onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc('') }}
+                <button type="button" onClick={() => { setShowGroupModal(false); setSelectedMembers([]); setGroupName(''); setGroupDesc(''); setGroupPhoto('') }}
                   className="btn-secondary flex-1 py-3">Cancel</button>
                 <button type="submit" disabled={!groupName.trim() || selectedMembers.length < 1}
                   className="btn-primary flex-1 py-3">Create Group</button>

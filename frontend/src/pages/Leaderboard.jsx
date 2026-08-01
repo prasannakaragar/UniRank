@@ -153,6 +153,7 @@ export default function Leaderboard() {
           <select className="appearance-none bg-white border border-border-dim rounded-full px-6 py-2 pr-10 text-xs font-bold text-text-secondary focus:outline-none focus:ring-1 focus:ring-primary/20" value={year} onChange={e => setYear(e.target.value)}>
             <option value="">ALL YEARS</option>
             {[1,2,3,4].map(y => <option key={y} value={y}>YEAR {y}</option>)}
+            <option value="alumni">ALUMNI</option>
           </select>
           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-text-secondary">
             <ChevronDownIcon size={12} />
@@ -230,7 +231,7 @@ export default function Leaderboard() {
                               {entry.name} {isMe && <span className="text-xs ml-1">(YOU)</span>}
                             </Link>
                             <p className="text-[11px] text-text-secondary font-bold uppercase tracking-wider">
-                              Year {entry.year} {entry.college && `• ${entry.college}`}
+                              {entry.year_display || (entry.is_alumni ? 'Alumni' : `Year ${entry.year}`)} {entry.college && `• ${entry.college}`}
                             </p>
                           </div>
                         </div>

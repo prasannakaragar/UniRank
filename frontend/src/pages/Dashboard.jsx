@@ -44,7 +44,7 @@ function StudentDashboard() {
         <h1 className="text-4xl font-bold text-text-primary">
           Welcome back, <span className="text-primary">{user?.name?.split(' ')[0]}</span> 👋
         </h1>
-        <p className="text-text-secondary mt-2 text-[15px] font-medium">{user?.branch} · Year {user?.year}</p>
+        <p className="text-text-secondary mt-2 text-[15px] font-medium">{user?.branch} · {user?.year_display || (user?.is_alumni ? 'Alumni' : `Year ${user?.year}`)}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">

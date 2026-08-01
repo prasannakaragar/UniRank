@@ -4,12 +4,36 @@ import { useAuth } from '../context/AuthContext'
 
 const BRANCHES = ['CSE', 'ISE', 'ECE', 'EEE', 'ME', 'CE', 'BT', 'CH', 'Other']
 
+const CURRENT_YEAR = new Date().getFullYear()
+const ADMISSION_YEAR_OPTIONS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i)
+
+function detectAdmissionYearFromEmail(email) {
+  if (!email) return ''
+  const clean = email.toLowerCase().trim()
+  const patterns = [
+    /(?:ugcet|pgcet|cs|am|is|ee|ec|me|cv|at1a|ug|bycs)([0-2][0-9])/i,
+    /^([0-2][0-9])[a-z]/i,
+    /1ms([0-2][0-9])/i,
+    /pes[0-9]ug([0-2][0-9])/i,
+    /r([0-2][0-9])@/i,
+  ]
+  for (const pat of patterns) {
+    const match = clean.match(pat)
+    if (match && match[1]) {
+      const yy = parseInt(match[1], 10)
+      if (yy >= 15 && yy <= 30) return (2000 + yy).toString()
+    }
+  }
+  return ''
+}
+
 export default function Register() {
   const { register, verifyOtp, resendOtp } = useAuth()
   const navigate = useNavigate()
 
   const [step, setStep]       = useState('register')
-  const [form, setForm]       = useState({ name: '', email: '', password: '', branch: '', year: '', college: '' })
+  const [form, setForm]       = useState({ name: '', email: '', password: '', branch: '', admission_year: '', college: '' })
+  const [userInteractedWithYear, setUserInteractedWithYear] = useState(false)
   const [otp, setOtp]         = useState(['', '', '', '', '', ''])
   const [error, setError]     = useState('')
   const [success, setSuccess] = useState('')
@@ -18,6 +42,17 @@ export default function Register() {
 
   const inputRefs = useRef([])
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  const handleEmailChange = (val) => {
+    setForm(p => {
+      const updated = { ...p, email: val }
+      if (!userInteractedWithYear) {
+        const detected = detectAdmissionYearFromEmail(val)
+        if (detected) updated.admission_year = detected
+      }
+      return updated
+    })
+  }
 
   useEffect(() => {
     if (countdown <= 0) return
@@ -29,7 +64,7 @@ export default function Register() {
     e.preventDefault()
     setError(''); setSuccess(''); setLoading(true)
     try {
-      const res = await register({ ...form, year: parseInt(form.year) })
+      const res = await register({ ...form, admission_year: parseInt(form.admission_year, 10) })
       setSuccess(res.message || 'OTP sent to your email!')
       setCountdown(300)
       setStep('verify')
@@ -142,7 +177,7 @@ export default function Register() {
               <div>
                 <label className="section-label block mb-2">College Email</label>
                 <input className="input" type="email" placeholder="you@college.edu" value={form.email}
-                  onChange={e => set('email', e.target.value)} required />
+                  onChange={e => handleEmailChange(e.target.value)} required />
               </div>
 
               <div>
@@ -160,13 +195,24 @@ export default function Register() {
                   </select>
                 </div>
                 <div>
-                  <label className="section-label block mb-2">Year</label>
-                  <select className="input" value={form.year} onChange={e => set('year', e.target.value)} required>
+                  <label className="section-label block mb-2">Admission Year</label>
+                  <select
+                    className="input"
+                    value={form.admission_year}
+                    onChange={e => {
+                      setUserInteractedWithYear(true)
+                      set('admission_year', e.target.value)
+                    }}
+                    required
+                  >
                     <option value="">Select…</option>
-                    {[1, 2, 3, 4].map(y => <option key={y} value={y}>Year {y}</option>)}
+                    {ADMISSION_YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
               </div>
+              <p className="text-[11px] text-text-secondary font-medium -mt-2">
+                The year you started your degree — we'll calculate your current year automatically.
+              </p>
 
               <div>
                 <label className="section-label block mb-2">Password</label>

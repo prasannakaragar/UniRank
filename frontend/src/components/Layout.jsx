@@ -22,6 +22,7 @@ const nav = [
   { to: '/leaderboard',   label: 'Leaderboard',   icon: TrophyIcon, roles: ['student', 'mentor', 'admin'] },
   { to: '/announcements', label: 'Announcements', icon: MegaphoneIcon, roles: ['student', 'mentor', 'admin'] },
   { to: '/teams',         label: 'Teams',         icon: UsersIcon, roles: ['student', 'admin'] }, // Mentors don't need teams
+  { to: '/discovery',     label: 'Discovery',     icon: CompassIcon, roles: ['student', 'mentor', 'admin'] },
   { to: '/chats',         label: 'Chats',         icon: ChatIcon, roles: ['student', 'mentor', 'admin'], badge: true },
   { to: '/profile',       label: 'My Profile',    icon: UserIcon, roles: ['student', 'mentor', 'admin'] },
 ]
@@ -35,6 +36,41 @@ export default function Layout() {
   const [unreadCertCount, setUnreadCertCount] = useState(0)
   const [certToast, setCertToast] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
+
+  // Collapsible sidebar state & persistence
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('unirank_sidebar_collapsed')
+    return saved === 'true'
+  })
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    let timeoutId = null
+    const handleResize = () => {
+      clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        setIsMobile(window.innerWidth < 768)
+      }, 150)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      clearTimeout(timeoutId)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
+
+  const toggleSidebar = () => {
+    if (isMobile) {
+      setMobileOpen(prev => !prev)
+    } else {
+      setSidebarCollapsed(prev => {
+        const next = !prev
+        localStorage.setItem('unirank_sidebar_collapsed', next.toString())
+        return next
+      })
+    }
+  }
 
   const handleLogout = () => { logout(); navigate('/login') }
 
@@ -100,41 +136,68 @@ export default function Layout() {
 
   return (
     <div className="flex min-h-screen bg-page">
+      {/* Mobile Drawer Backdrop */}
+      {isMobile && mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 bg-black/40 z-40 animate-in fade-in duration-200"
+        />
+      )}
+
       {/* ── Sidebar ── */}
-      <aside className="w-[280px] bg-white border-r border-sidebar-border flex flex-col fixed h-full z-10">
-        {/* Logo */}
-        <div className="px-8 py-8">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+      <aside
+        className={`bg-white border-r border-sidebar-border flex flex-col fixed h-full z-40 transition-all duration-300 ease-in-out ${
+          isMobile
+            ? `w-[260px] top-0 left-0 ${mobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full pointer-events-none'}`
+            : sidebarCollapsed
+            ? 'w-[72px]'
+            : 'w-[280px]'
+        }`}
+      >
+        {/* Header: Logo + Toggle Button */}
+        <div className={`py-6 border-b border-border-dim/50 flex items-center ${sidebarCollapsed && !isMobile ? 'justify-center px-2' : 'justify-between px-6'}`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-md">
               <span className="text-white font-bold text-xl">U</span>
             </div>
-            <div>
-              <p className="font-bold text-text-primary text-xl leading-none tracking-tight">UniRank</p>
-              <p className="text-[10px] text-text-secondary font-bold mt-1 uppercase tracking-[0.1em]">PLATFORM</p>
-            </div>
+            {(!sidebarCollapsed || isMobile) && (
+              <div className="min-w-0 truncate">
+                <p className="font-bold text-text-primary text-xl leading-none tracking-tight">UniRank</p>
+                <p className="text-[10px] text-text-secondary font-bold mt-1 uppercase tracking-[0.1em]">PLATFORM</p>
+              </div>
+            )}
           </div>
+          <button
+            onClick={toggleSidebar}
+            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-text-secondary hover:text-primary transition-colors shrink-0 font-bold"
+            title={isMobile ? 'Close menu' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed && !isMobile ? '➔' : '❮'}
+          </button>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
           {nav
             .filter(item => !item.roles || item.roles.includes(user?.role))
             .map(({ to, label, icon: Icon, badge }) => (
             <NavLink
               key={to}
               to={to}
+              onClick={() => isMobile && setMobileOpen(false)}
+              title={sidebarCollapsed && !isMobile ? label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                `flex items-center ${sidebarCollapsed && !isMobile ? 'justify-center px-0' : 'gap-3 px-4'} py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
                   isActive
                     ? 'bg-accent-pill text-primary relative before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-1 before:bg-primary before:rounded-r-full'
                     : 'text-text-secondary hover:bg-page'
                 }`
               }
             >
-              <Icon size={18} className="stroke-[2.5]" />
-              {label}
+              <Icon size={20} className="stroke-[2.5] shrink-0" />
+              {(!sidebarCollapsed || isMobile) && <span className="truncate">{label}</span>}
               {badge && unread > 0 && (
-                <span className="ml-auto bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                <span className={`${sidebarCollapsed && !isMobile ? 'absolute -top-1 -right-1' : 'ml-auto'} bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full`}>
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
@@ -143,32 +206,57 @@ export default function Layout() {
         </nav>
 
         {/* User footer */}
-        <div className="px-6 py-6 border-t border-border-dim">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center border border-border-dim">
+        <div className={`py-4 border-t border-border-dim ${sidebarCollapsed && !isMobile ? 'px-2 text-center' : 'px-6'}`}>
+          <div className={`flex items-center gap-3 mb-3 ${sidebarCollapsed && !isMobile ? 'justify-center' : ''}`} title={sidebarCollapsed && !isMobile ? `${user?.name} (${user?.branch} Y${user?.year})` : undefined}>
+            <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
               <span className="text-primary font-bold text-sm">
                 {user?.name?.[0]?.toUpperCase()}
               </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-text-primary truncate">{user?.name}</p>
-              <p className="text-[11px] text-text-secondary font-medium truncate uppercase tracking-wider">{user?.branch} · Y{user?.year}</p>
-            </div>
+            {(!sidebarCollapsed || isMobile) && (
+              <div className="flex-1 min-w-0 text-left">
+                <p className="text-sm font-bold text-text-primary truncate">{user?.name}</p>
+                <p className="text-[11px] text-text-secondary font-medium truncate uppercase tracking-wider">{user?.branch} · Y{user?.year}</p>
+              </div>
+            )}
           </div>
           <button 
-            onClick={handleLogout} 
-            className="flex items-center gap-2 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors group"
+            onClick={handleLogout}
+            title={sidebarCollapsed && !isMobile ? 'Sign out' : undefined}
+            className={`flex items-center gap-2 text-[13px] font-bold text-text-secondary hover:text-danger transition-colors group ${sidebarCollapsed && !isMobile ? 'justify-center w-full py-2' : ''}`}
           >
-            Sign out <span className="group-hover:translate-x-1 transition-transform">→</span>
+            {(!sidebarCollapsed || isMobile) && <span>Sign out</span>}
+            <span className="group-hover:translate-x-1 transition-transform">→</span>
           </button>
         </div>
       </aside>
 
       {/* ── Main content ── */}
-      <main className="flex-1 ml-[280px] min-h-screen">
+      <main className={`flex-1 transition-all duration-300 ease-in-out min-h-screen ${
+        isMobile ? 'ml-0' : sidebarCollapsed ? 'ml-[72px]' : 'ml-[280px]'
+      }`}>
+        {/* Mobile Header Bar with Hamburger Button */}
+        {isMobile && (
+          <div className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-border-dim px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="w-10 h-10 rounded-xl bg-gray-100 hover:bg-gray-200 text-text-primary flex items-center justify-center font-bold text-lg transition-colors"
+              title="Open menu"
+            >
+              ☰
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-xs">U</span>
+              </div>
+              <span className="font-extrabold text-text-primary text-base">UniRank</span>
+            </div>
+            <div className="w-10" />
+          </div>
+        )}
         {/* Admin notification bell bar */}
         {(user?.role === 'admin' || user?.role === 'superadmin') && (
-          <div className="sticky top-0 z-30 bg-page/80 backdrop-blur-md border-b border-border-dim">
+          <div className="relative z-30 bg-page border-b border-border-dim">
             <div className="max-w-6xl mx-auto px-10 py-3 flex justify-end items-center">
               <div className="relative notification-bell-container">
                 <button
@@ -320,6 +408,14 @@ function ChatIcon({ size = 20 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+    </svg>
+  )
+}
+function CompassIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>
     </svg>
   )
 }

@@ -1,0 +1,37 @@
+{
+  "name": "unirank-backend",
+  "version": "1.0.0",
+  "description": "UniRank MERN Backend - Express.js + Mongoose",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed": "node src/scripts/seedDb.js",
+    "seed:colleges": "node src/scripts/seedColleges.js",
+    "set-role": "node src/scripts/setRole.js",
+    "reset-db": "node src/scripts/resetDb.js",
+    "migrate-passwords": "node src/scripts/migratePasswords.js",
+    "check-users": "node src/scripts/checkUsers.js",
+    "delete-user": "node src/scripts/deleteUser.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "axios": "^1.7.9",
+    "bcryptjs": "^2.4.3",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.5",
+    "multer": "^1.4.5-lts.1",
+    "node-cache": "^5.1.2",
+    "socket.io": "^4.8.1",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

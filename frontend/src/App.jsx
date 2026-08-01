@@ -11,6 +11,7 @@ const Announcements = lazy(() => import('./pages/Announcements'))
 const Teams = lazy(() => import('./pages/Teams'))
 const Profile = lazy(() => import('./pages/Profile'))
 const Chats = lazy(() => import('./pages/Chats'))
+const Discovery = lazy(() => import('./pages/Discovery'))
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -66,6 +67,7 @@ export default function App() {
             </RoleRoute>
           } />
           <Route path="/chats"         element={<Chats />} />
+          <Route path="/discovery"    element={<Discovery />} />
           <Route path="/profile"       element={<Profile />} />
           <Route path="/profile/:id"   element={<Profile />} />
         </Route>

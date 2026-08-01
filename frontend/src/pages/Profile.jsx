@@ -294,7 +294,7 @@ export default function Profile() {
                 )}
               </div>
             </div>
-            <p className="text-text-secondary font-bold uppercase tracking-wider text-sm">{profile.branch} · Year {profile.year}</p>
+            <p className="text-text-secondary font-bold uppercase tracking-wider text-sm">{profile.branch} · {profile.year_display || (profile.is_alumni ? 'Alumni' : `Year ${profile.year}`)}</p>
             <p className="text-text-secondary font-medium text-sm mt-1 mb-4">{profile.email}</p>
             
             <div className="flex gap-4 mb-4">
