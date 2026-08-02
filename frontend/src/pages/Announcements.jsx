@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
 const CATEGORIES = ['all', 'hackathon', 'contest', 'general']
 
 // ── Compact List Card ──────────────────────────────────────────
-function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick }) {
+function AnnouncementListCard({ post, currentUserId, userRole, onDelete }) {
+  const navigate = useNavigate()
   const targetDate = post.deadline || post.event_date
   const targetDateObj = targetDate ? new Date(targetDate) : null
   const isValidDate = targetDateObj && !isNaN(targetDateObj)
@@ -19,7 +21,7 @@ function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick
 
   return (
     <div
-      onClick={() => onClick(post)}
+      onClick={() => navigate(`/announcements/${post.id}`)}
       className="card hover:shadow-lg transition-all duration-300 cursor-pointer group relative overflow-hidden flex flex-col md:flex-row gap-6"
     >
       <div className="flex-1 min-w-0">
@@ -61,10 +63,10 @@ function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick
         </div>
 
         {/* Perks / Prize */}
-        {post.perks && (
+        {(post.prize_pool || post.perks) && (
           <div className="mb-4">
             <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 text-[13px] font-bold border border-amber-100">
-              🏆 {post.perks}
+              🏆 {post.prize_pool || post.perks}
             </span>
           </div>
         )}
@@ -76,6 +78,11 @@ function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick
             {daysLeft !== null && (
               <span className={`font-bold ${isExpired ? 'text-danger' : 'text-emerald-500'}`}>
                 {daysLeft > 0 ? `Ends in ${daysLeft}d` : daysLeft === 0 ? 'ENDS TODAY' : 'EXPIRED'}
+              </span>
+            )}
+            {post.registered_count > 0 && (
+              <span className="text-text-secondary">
+                👥 {post.registered_count.toLocaleString()} registered
               </span>
             )}
           </div>
@@ -104,153 +111,6 @@ function AnnouncementListCard({ post, currentUserId, userRole, onDelete, onClick
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Detail Modal ────────────────────────────────────────────────
-function AnnouncementDetail({ post, onClose, currentUserId, userRole, onDelete }) {
-  if (!post) return null
-
-  const targetDate = post.deadline || post.event_date
-  const targetDateObj = targetDate ? new Date(targetDate) : null
-  const isValidDate = targetDateObj && !isNaN(targetDateObj)
-  const daysLeft = isValidDate
-    ? Math.ceil((targetDateObj - new Date()) / (1000 * 60 * 60 * 24))
-    : null
-  const isExpired = daysLeft !== null && daysLeft < 0
-
-  const safeFormatDate = (dateStr) => {
-    if (!dateStr) return 'TBA'
-    const d = new Date(dateStr)
-    return isNaN(d) ? dateStr : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-2xl bg-white rounded-2xl overflow-hidden shadow-2xl border border-border-dim flex flex-col max-h-[90vh]"
-        onClick={e => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-20 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-text-secondary shadow-sm border border-border-dim transition-colors"
-        >
-          ✕
-        </button>
-
-        <div className="overflow-y-auto">
-          {/* Banner */}
-          {post.background_banner_url && (
-            <div className="h-56 relative">
-              <img
-                src={post.background_banner_url}
-                alt="banner"
-                className="w-full h-full object-cover"
-                onError={e => { e.target.parentElement.style.display = 'none' }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
-            </div>
-          )}
-
-          <div className="px-8 pb-10 -mt-10 relative z-10">
-            {/* Header info */}
-            <div className="flex justify-between items-end gap-6 mb-8">
-              <div className="flex-1">
-                <span className={`badge mb-3 ${
-                  post.category === 'hackathon' ? 'badge-purple' : 'badge-blue'
-                }`}>
-                  {post.category}
-                </span>
-                <h1 className="text-3xl font-extrabold text-text-primary leading-tight">
-                  {post.title}
-                </h1>
-                <p className="text-text-secondary font-bold uppercase tracking-wider text-sm mt-1">{post.organization}</p>
-              </div>
-              {post.banner_url && (
-                <img
-                  src={post.banner_url}
-                  alt="logo"
-                  className="w-24 h-24 object-cover rounded-2xl border-4 border-white shadow-card"
-                  onError={e => { e.target.style.display = 'none' }}
-                />
-              )}
-            </div>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="p-4 rounded-xl bg-gray-50 border border-border-dim">
-                <p className="section-label mb-1">TEAM SIZE</p>
-                <p className="text-lg font-bold text-text-primary">{post.team_size || 'Individual'}</p>
-              </div>
-              <div className="p-4 rounded-xl bg-gray-50 border border-border-dim">
-                <p className="section-label mb-1">MODE</p>
-                <p className="text-lg font-bold text-text-primary">{post.mode || 'Online'}</p>
-              </div>
-            </div>
-
-            {/* Description */}
-            <div className="prose prose-sm max-w-none mb-10">
-              <h3 className="section-label mb-4">ABOUT THE OPPORTUNITY</h3>
-              <p className="text-gray-600 text-[15px] leading-relaxed whitespace-pre-wrap">
-                {post.description}
-              </p>
-            </div>
-
-            {/* Timeline */}
-            <div className="space-y-4 mb-10">
-              <h3 className="section-label">TIMELINE</h3>
-              <div className="flex flex-col gap-3">
-                {post.event_date && (
-                  <div className="flex items-center gap-4 p-4 rounded-xl border border-border-dim">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold">📅</div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-text-primary">Event Date</p>
-                      <p className="text-xs text-text-secondary font-medium">{safeFormatDate(post.event_date)}</p>
-                    </div>
-                  </div>
-                )}
-                {post.deadline && (
-                  <div className={`flex items-center gap-4 p-4 rounded-xl border ${isExpired ? 'bg-danger/5 border-danger/20' : 'bg-amber-50 border-amber-100'}`}>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-bold ${isExpired ? 'bg-danger/10 text-danger' : 'bg-amber-100 text-amber-600'}`}>⏳</div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-text-primary">Registration Deadline</p>
-                      <p className={`text-xs font-bold ${isExpired ? 'text-danger' : 'text-amber-700'}`}>
-                        {safeFormatDate(post.deadline)} — {daysLeft > 0 ? `${daysLeft} days left` : isExpired ? 'Expired' : 'Ends today'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Footer actions */}
-            <div className="flex items-center gap-4">
-              {post.link && (
-                <a
-                  href={post.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn-primary flex-1 text-center py-4"
-                >
-                  Register Now ↗
-                </a>
-              )}
-              {userRole === 'admin' && (
-                <button
-                  onClick={() => { onDelete(post.id); onClose() }}
-                  className="px-6 py-4 rounded-lg bg-danger/5 text-danger font-bold hover:bg-danger/10 transition-colors"
-                >
-                  Delete
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
@@ -322,6 +182,62 @@ function FileUploadInput({ label, value, onChange, placeholder, previewClass }) 
   )
 }
 
+// ── Stage / FAQ builder helpers ────────────────────────────────────
+function StageRow({ stage, index, onChange, onRemove }) {
+  return (
+    <div className="p-4 rounded-xl border border-border-dim space-y-3 bg-gray-50">
+      <div className="flex items-center justify-between">
+        <span className="section-label">Stage {index + 1}</span>
+        <button type="button" onClick={onRemove} className="text-text-secondary hover:text-danger text-xs font-bold transition-colors">Remove</button>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <input
+          className="input"
+          placeholder="Stage title (e.g. Registration)"
+          value={stage.title}
+          onChange={e => onChange({ ...stage, title: e.target.value })}
+        />
+        <input
+          className="input"
+          placeholder="Date range (e.g. Jan 1 – Jan 15)"
+          value={stage.date_range}
+          onChange={e => onChange({ ...stage, date_range: e.target.value })}
+        />
+      </div>
+      <input
+        className="input"
+        placeholder="Short description (optional)"
+        value={stage.description}
+        onChange={e => onChange({ ...stage, description: e.target.value })}
+      />
+    </div>
+  )
+}
+
+function FaqRow({ faq, index, onChange, onRemove }) {
+  return (
+    <div className="p-4 rounded-xl border border-border-dim space-y-3 bg-gray-50">
+      <div className="flex items-center justify-between">
+        <span className="section-label">FAQ {index + 1}</span>
+        <button type="button" onClick={onRemove} className="text-text-secondary hover:text-danger text-xs font-bold transition-colors">Remove</button>
+      </div>
+      <input
+        className="input"
+        placeholder="Question"
+        value={faq.question}
+        onChange={e => onChange({ ...faq, question: e.target.value })}
+      />
+      <textarea
+        className="input resize-none"
+        rows={2}
+        placeholder="Answer"
+        value={faq.answer}
+        onChange={e => onChange({ ...faq, answer: e.target.value })}
+      />
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Announcements() {
   const { user } = useAuth()
@@ -330,13 +246,16 @@ export default function Announcements() {
   const [loading, setLoading]     = useState(true)
   const [showForm, setShowForm]   = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [selected, setSelected]   = useState(null)
+  const [showExtras, setShowExtras] = useState(false)
 
   const initialFormState = {
     title: '', category: 'hackathon', organization: '', description: '',
     participation_type: 'Individual Participation', mode: 'Online',
     tags: '', link: '', event_date: '', deadline: '',
-    banner_url: '', background_banner_url: '', team_size: '', perks: ''
+    banner_url: '', background_banner_url: '', team_size: '', perks: '',
+    // New fields
+    registration_start_date: '', prize_pool: '', eligibility: '',
+    stages: [], faqs: [],
   }
   const [form, setForm] = useState(initialFormState)
 
@@ -358,8 +277,10 @@ export default function Announcements() {
               team_size: '2-4 Members',
               tags: ['AI', 'Web3', 'React'],
               perks: '₹1 Lakh Prize Pool',
+              prize_pool: '₹1,00,000',
               created_at: new Date().toISOString(),
               deadline: new Date(Date.now() + 86400000 * 10).toISOString(),
+              registered_count: 248,
             },
             {
               id: 'dummy-2',
@@ -373,6 +294,7 @@ export default function Announcements() {
               perks: 'Top 10 get interviews',
               created_at: new Date(Date.now() - 86400000).toISOString(),
               event_date: new Date(Date.now() + 86400000 * 3).toISOString(),
+              registered_count: 94,
             }
           ]
         }
@@ -397,6 +319,7 @@ export default function Announcements() {
       await api.post('/announcements', form)
       setForm(initialFormState)
       setShowForm(false)
+      setShowExtras(false)
       fetchPosts(cat)
     } finally {
       setSubmitting(false)
@@ -409,23 +332,23 @@ export default function Announcements() {
     setPosts(p => p.filter(x => x.id !== id))
   }
 
+  // Stage helpers
+  const addStage = () => setForm(f => ({ ...f, stages: [...f.stages, { title: '', date_range: '', description: '' }] }))
+  const updateStage = (i, val) => setForm(f => ({ ...f, stages: f.stages.map((s, idx) => idx === i ? val : s) }))
+  const removeStage = (i) => setForm(f => ({ ...f, stages: f.stages.filter((_, idx) => idx !== i) }))
+
+  // FAQ helpers
+  const addFaq = () => setForm(f => ({ ...f, faqs: [...f.faqs, { question: '', answer: '' }] }))
+  const updateFaq = (i, val) => setForm(f => ({ ...f, faqs: f.faqs.map((q, idx) => idx === i ? val : q) }))
+  const removeFaq = (i) => setForm(f => ({ ...f, faqs: f.faqs.filter((_, idx) => idx !== i) }))
+
   return (
     <div className="space-y-10">
-      {selected && (
-        <AnnouncementDetail
-          post={selected}
-          onClose={() => setSelected(null)}
-          currentUserId={user?.id}
-          userRole={user?.role}
-          onDelete={handleDelete}
-        />
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-bold text-text-primary">Announcements</h1>
-          <p className="text-text-secondary text-[15px] mt-2 font-medium">Hackathons, contests & technical opportunities for you.</p>
+          <p className="text-text-secondary text-[15px] mt-2 font-medium">Hackathons, contests &amp; technical opportunities for you.</p>
         </div>
         {user?.role === 'admin' && (
           <button onClick={() => setShowForm(p => !p)} className={`btn-primary self-start sm:self-auto ${showForm ? 'bg-danger hover:brightness-110' : ''}`}>
@@ -486,7 +409,7 @@ export default function Announcements() {
                   onChange={e => setForm(p => ({ ...p, team_size: e.target.value }))} />
               </div>
               <div>
-                <label className="section-label block mb-2">Key Perk / Prize</label>
+                <label className="section-label block mb-2">Key Perk / Prize Badge</label>
                 <input className="input" placeholder="e.g. Internships & ₹50k Prize" value={form.perks}
                   onChange={e => setForm(p => ({ ...p, perks: e.target.value }))} />
               </div>
@@ -533,6 +456,102 @@ export default function Announcements() {
               </div>
             </div>
 
+            {/* ── Collapsible extras section ─────────────────────── */}
+            <div className="border border-border-dim rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowExtras(p => !p)}
+                className="w-full flex items-center justify-between px-5 py-4 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+              >
+                <span className="font-bold text-text-primary text-sm">
+                  ✨ Timeline, Prizes &amp; FAQs
+                  <span className="ml-2 font-normal text-text-secondary">(optional — for Unstop-style detail page)</span>
+                </span>
+                <span className={`text-text-secondary transition-transform duration-200 ${showExtras ? 'rotate-180' : ''}`}>▼</span>
+              </button>
+
+              {showExtras && (
+                <div className="p-6 space-y-8">
+                  {/* Prize + Eligibility + Reg start */}
+                  <div className="grid sm:grid-cols-3 gap-6">
+                    <div>
+                      <label className="section-label block mb-2">Registration Opens</label>
+                      <input className="input" type="date" value={form.registration_start_date}
+                        onChange={e => setForm(p => ({ ...p, registration_start_date: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="section-label block mb-2">Prize Pool</label>
+                      <input className="input" placeholder="e.g. ₹50,000 + Internships" value={form.prize_pool}
+                        onChange={e => setForm(p => ({ ...p, prize_pool: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="section-label block mb-2">Eligibility</label>
+                      <input className="input" placeholder="e.g. Open to all students" value={form.eligibility}
+                        onChange={e => setForm(p => ({ ...p, eligibility: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {/* Stages builder */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <label className="section-label">Stages &amp; Timeline</label>
+                      <button
+                        type="button"
+                        onClick={addStage}
+                        className="text-primary font-bold text-sm hover:underline"
+                      >
+                        + Add Stage
+                      </button>
+                    </div>
+                    {form.stages.length === 0 ? (
+                      <p className="text-text-secondary text-sm italic">No stages added. Click "+ Add Stage" to build a timeline.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {form.stages.map((s, i) => (
+                          <StageRow
+                            key={i}
+                            stage={s}
+                            index={i}
+                            onChange={val => updateStage(i, val)}
+                            onRemove={() => removeStage(i)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* FAQ builder */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <label className="section-label">FAQs</label>
+                      <button
+                        type="button"
+                        onClick={addFaq}
+                        className="text-primary font-bold text-sm hover:underline"
+                      >
+                        + Add FAQ
+                      </button>
+                    </div>
+                    {form.faqs.length === 0 ? (
+                      <p className="text-text-secondary text-sm italic">No FAQs added. Click "+ Add FAQ" to add questions.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {form.faqs.map((f, i) => (
+                          <FaqRow
+                            key={i}
+                            faq={f}
+                            index={i}
+                            onChange={val => updateFaq(i, val)}
+                            onRemove={() => removeFaq(i)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="pt-4 border-t border-border-dim">
               <button type="submit" disabled={submitting} className="btn-primary px-10 py-4">
                 {submitting ? 'Posting Opportunity…' : 'Publish Announcement'}
@@ -574,7 +593,6 @@ export default function Announcements() {
               currentUserId={user?.id}
               userRole={user?.role}
               onDelete={handleDelete}
-              onClick={setSelected}
             />
           ))}
         </div>

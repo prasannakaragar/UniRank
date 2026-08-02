@@ -1,5 +1,15 @@
 import mongoose from 'mongoose';
 
+const stageSchema = new mongoose.Schema(
+  { title: String, date_range: String, description: String },
+  { _id: false }
+);
+
+const faqSchema = new mongoose.Schema(
+  { question: String, answer: String },
+  { _id: false }
+);
+
 const announcementSchema = new mongoose.Schema({
   author: {
     type: mongoose.Schema.Types.ObjectId,
@@ -23,6 +33,15 @@ const announcementSchema = new mongoose.Schema({
   is_pinned:           { type: Boolean, default: false },
   created_at:          { type: Date, default: Date.now },
   expires_at:          { type: Date },
+
+  // ── New fields (Unstop-equivalent) ─────────────────────────────────
+  registration_start_date: { type: String, maxlength: 50 },
+  prize_pool:              { type: String, maxlength: 200, default: '' },
+  eligibility:             { type: String, maxlength: 200, default: '' },
+  stages:                  [stageSchema],
+  faqs:                    [faqSchema],
+  registered_count:        { type: Number, default: 0 },
+  registrations:           [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 });
 
 // TTL index — auto-delete when expires_at is reached
@@ -52,6 +71,22 @@ announcementSchema.methods.toDict = function () {
     perks: this.perks,
     is_pinned: this.is_pinned,
     created_at: this.created_at.toISOString(),
+
+    // New fields
+    registration_start_date: this.registration_start_date || null,
+    prize_pool: this.prize_pool || '',
+    eligibility: this.eligibility || '',
+    stages: Array.isArray(this.stages)
+      ? this.stages.map((s) => ({
+          title: s.title || '',
+          date_range: s.date_range || '',
+          description: s.description || '',
+        }))
+      : [],
+    faqs: Array.isArray(this.faqs)
+      ? this.faqs.map((f) => ({ question: f.question || '', answer: f.answer || '' }))
+      : [],
+    registered_count: this.registered_count || 0,
   };
 };
 

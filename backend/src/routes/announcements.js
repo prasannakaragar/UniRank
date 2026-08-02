@@ -31,6 +31,18 @@ router.get('/announcements', verifyToken, async (req, res) => {
   }
 });
 
+// ── GET /api/announcements/:id ─────────────────────────────────────
+router.get('/announcements/:id', verifyToken, async (req, res) => {
+  try {
+    const post = await Announcement.findById(req.params.id).populate('author');
+    if (!post) return res.status(404).json({ error: 'Announcement not found' });
+    return res.status(200).json({ announcement: post.toDict() });
+  } catch (err) {
+    console.error('[GET /announcements/:id] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ── POST /api/announcements ────────────────────────────────────────
 router.post('/announcements', verifyToken, adminOnly, async (req, res) => {
   try {
@@ -51,6 +63,29 @@ router.post('/announcements', verifyToken, adminOnly, async (req, res) => {
       }
     }
 
+    // Sanitize stages array
+    let stages = [];
+    if (Array.isArray(data.stages)) {
+      stages = data.stages
+        .filter((s) => s && (s.title || s.date_range || s.description))
+        .map((s) => ({
+          title: (s.title || '').trim(),
+          date_range: (s.date_range || '').trim(),
+          description: (s.description || '').trim(),
+        }));
+    }
+
+    // Sanitize faqs array
+    let faqs = [];
+    if (Array.isArray(data.faqs)) {
+      faqs = data.faqs
+        .filter((f) => f && (f.question || f.answer))
+        .map((f) => ({
+          question: (f.question || '').trim(),
+          answer: (f.answer || '').trim(),
+        }));
+    }
+
     const post = new Announcement({
       author: author._id,
       title: data.title.trim(),
@@ -68,6 +103,13 @@ router.post('/announcements', verifyToken, adminOnly, async (req, res) => {
       team_size: data.team_size || 'Individual',
       perks: data.perks || '',
       expires_at: expiresAt,
+
+      // New fields
+      registration_start_date: data.registration_start_date || null,
+      prize_pool: data.prize_pool || '',
+      eligibility: data.eligibility || '',
+      stages,
+      faqs,
     });
 
     await post.save();
@@ -80,6 +122,34 @@ router.post('/announcements', verifyToken, adminOnly, async (req, res) => {
     });
   } catch (err) {
     console.error('[POST /announcements] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── POST /api/announcements/:id/register ──────────────────────────
+router.post('/announcements/:id/register', verifyToken, async (req, res) => {
+  try {
+    const post = await Announcement.findById(req.params.id);
+    if (!post) return res.status(404).json({ error: 'Announcement not found' });
+
+    const userId = req.userId;
+    const alreadyRegistered = post.registrations.some(
+      (r) => r.toString() === userId.toString()
+    );
+    if (alreadyRegistered) {
+      return res.status(409).json({ error: 'Already registered' });
+    }
+
+    post.registrations.push(userId);
+    post.registered_count = post.registrations.length;
+    await post.save();
+
+    return res.status(200).json({
+      message: 'Registered successfully',
+      registered_count: post.registered_count,
+    });
+  } catch (err) {
+    console.error('[POST /announcements/:id/register] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

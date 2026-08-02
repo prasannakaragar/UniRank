@@ -8,7 +8,8 @@ const Login        = lazy(() => import('./pages/Login'))
 const Register     = lazy(() => import('./pages/Register'))
 const Dashboard    = lazy(() => import('./pages/Dashboard'))
 const Leaderboard  = lazy(() => import('./pages/Leaderboard'))
-const Announcements = lazy(() => import('./pages/Announcements'))
+const Announcements       = lazy(() => import('./pages/Announcements'))
+const AnnouncementDetail  = lazy(() => import('./pages/AnnouncementDetail'))
 const Teams        = lazy(() => import('./pages/Teams'))
 const Profile      = lazy(() => import('./pages/Profile'))
 const Chats        = lazy(() => import('./pages/Chats'))
@@ -98,7 +99,8 @@ export default function App() {
           <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/leaderboard"   element={<Leaderboard />} />
-            <Route path="/announcements" element={<Announcements />} />
+            <Route path="/announcements"     element={<Announcements />} />
+            <Route path="/announcements/:id" element={<AnnouncementDetail />} />
             <Route path="/teams"         element={
               <RoleRoute allowedRoles={['student', 'admin']}>
                 <Teams />
