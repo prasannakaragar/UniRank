@@ -32,7 +32,24 @@ function formatMsgTime(iso) {
   return `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} ${hm}`
 }
 
-function Avatar({ name = '', size = 10 }) {
+function Avatar({ name = '', size = 10, src = null }) {
+  const [imgError, setImgError] = useState(false)
+
+  useEffect(() => {
+    setImgError(false)
+  }, [src])
+
+  if (src && !imgError) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={() => setImgError(true)}
+        className={`w-${size} h-${size} rounded-full object-cover border border-border-dim shrink-0`}
+      />
+    )
+  }
+
   return (
     <div className={`w-${size} h-${size} rounded-full bg-gray-100 border border-border-dim flex items-center justify-center shrink-0`}>
       <span className="text-primary font-bold text-sm">{name?.[0]?.toUpperCase()}</span>
@@ -551,11 +568,18 @@ export default function Chats() {
     }
   }
 
-  /* ── get display name for conv ── */
+  /* ── get display name and avatar for conv ── */
   const convName = (conv) => {
+    if (!conv) return ''
     if (conv.kind === 'group') return conv.name
     const other = conv.members?.find(m => m.user_id !== user?.id)
     return other?.name || 'Chat'
+  }
+  const convAvatar = (conv) => {
+    if (!conv) return null
+    if (conv.kind === 'group') return conv.group_photo || null
+    const other = conv.members?.find(m => m.user_id !== user?.id)
+    return other?.avatar_url || null
   }
   const convSub = (conv) => {
     if (conv.kind === 'group') return `${conv.members?.length} members`
@@ -644,7 +668,7 @@ export default function Chats() {
                     onClick={() => startDM(u.user_id)}
                     className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white transition-colors text-left border border-transparent hover:border-border-dim"
                   >
-                    <Avatar name={u.name} size={8} />
+                    <Avatar name={u.name} size={8} src={u.avatar_url} />
                     <div className="min-w-0">
                       <p className="text-[13px] font-bold text-text-primary truncate">{u.name}</p>
                       <p className="text-[11px] text-text-secondary font-medium">{u.branch} · Y{u.year}</p>
@@ -682,12 +706,12 @@ export default function Chats() {
                   activeConv?.id === conv.id ? 'bg-accent-pill relative before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-primary' : ''
                 }`}
               >
-                {conv.kind === 'group' ? (
+                {conv.kind === 'group' && !conv.group_photo ? (
                   <div className="w-11 h-11 rounded-full bg-gray-100 border border-border-dim flex items-center justify-center shrink-0">
                     <UsersIcon size={18} className="text-primary" />
                   </div>
                 ) : (
-                  <Avatar name={convName(conv)} size={11} />
+                  <Avatar name={convName(conv)} size={11} src={convAvatar(conv)} />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-1">
@@ -734,12 +758,12 @@ export default function Chats() {
                 className="flex flex-1 items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors -ml-4 pl-4 py-2 rounded-xl"
                 onClick={() => setShowInfoPanel(!showInfoPanel)}
               >
-                {activeConv.kind === 'group' ? (
+                {activeConv.kind === 'group' && !activeConv.group_photo ? (
                   <div className="w-10 h-10 rounded-full bg-gray-50 border border-border-dim flex items-center justify-center">
                     <UsersIcon size={18} className="text-primary" />
                   </div>
                 ) : (
-                  <Avatar name={convName(activeConv)} size={10} />
+                  <Avatar name={convName(activeConv)} size={10} src={convAvatar(activeConv)} />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-text-primary leading-none truncate">{convName(activeConv)}</p>
@@ -858,7 +882,7 @@ export default function Chats() {
                             />
                         )}
 
-                        {!isMe && <Avatar name={msg.senderName} size={8} />}
+                        {!isMe && <Avatar name={msg.senderName} size={8} src={msg.sender_avatar_url} />}
                         <div className={`max-w-[75%] ${isMe ? 'flex flex-col items-end' : ''}`}>
                           {!isMe && (
                             <p className="text-[11px] text-text-secondary mb-1.5 ml-1 font-bold uppercase tracking-wider">{msg.senderName}</p>
@@ -1102,7 +1126,7 @@ export default function Chats() {
                     const isSelf = m.user_id === user?.id;
                     return (
                       <div key={m.user_id} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-gray-50/80 border border-transparent hover:border-border-dim/50 transition-all relative">
-                        <Avatar name={m.name} size={8} />
+                        <Avatar name={m.name} size={8} src={m.avatar_url} />
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-bold text-text-primary truncate" title={m.name}>
                             {m.name} {isSelf && <span className="text-[10px] text-text-secondary font-normal">(You)</span>}
@@ -1209,7 +1233,7 @@ export default function Chats() {
                   onClick={() => forwardMessage(c.id)}
                   className="w-full px-6 py-4 hover:bg-gray-50 text-left flex items-center gap-4 transition-colors"
                 >
-                  <Avatar name={convName(c)} size={9} />
+                  <Avatar name={convName(c)} size={9} src={convAvatar(c)} />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold text-text-primary truncate">{convName(c)}</p>
                     <p className="text-xs text-text-secondary font-medium mt-0.5">{c.kind === 'group' ? 'Group' : 'Direct Message'}</p>
@@ -1252,7 +1276,7 @@ export default function Chats() {
                       onClick={() => setAddMembersSelected(prev => [...prev, u])}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white border border-transparent hover:border-border-dim text-left transition-all"
                     >
-                      <Avatar name={u.name} size={8} />
+                      <Avatar name={u.name} size={8} src={u.avatar_url} />
                       <div className="min-w-0 flex-1">
                         <span className="text-sm font-bold text-text-primary block truncate">{u.name}</span>
                         <span className="text-xs text-text-secondary font-medium">{u.branch} · Y{u.year}</span>
@@ -1359,7 +1383,7 @@ export default function Chats() {
                     <button type="button" key={u.user_id}
                       onClick={() => setSelectedMembers(prev => [...prev, u])}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white border border-transparent hover:border-border-dim text-left transition-all">
-                      <Avatar name={u.name} size={8} />
+                      <Avatar name={u.name} size={8} src={u.avatar_url} />
                       <div className="min-w-0">
                         <span className="text-sm font-bold text-text-primary block truncate">{u.name}</span>
                         <span className="text-xs text-text-secondary font-medium">{u.branch} · Y{u.year}</span>

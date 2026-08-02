@@ -15,6 +15,31 @@ function isMember(conv, userId) {
   return conv.getMember(userId) !== null;
 }
 
+// Helper to batch-fetch avatar_url from Profile collection
+async function getUserAvatarsMap(userIds) {
+  const map = new Map();
+  if (!userIds || userIds.length === 0) return map;
+  const uniqueIds = [...new Set(userIds.map((id) => String(id)).filter(Boolean))];
+  if (uniqueIds.length === 0) return map;
+  const profiles = await Profile.find({ user: { $in: uniqueIds } }, 'user avatar_url');
+  for (const p of profiles) {
+    if (p.user) {
+      map.set(p.user.toString(), p.avatar_url || null);
+    }
+  }
+  return map;
+}
+
+async function populateConvAvatars(convDict) {
+  if (!convDict || !Array.isArray(convDict.members)) return convDict;
+  const userIds = convDict.members.map((m) => m.user_id).filter(Boolean);
+  const map = await getUserAvatarsMap(userIds);
+  for (const m of convDict.members) {
+    m.avatar_url = map.get(String(m.user_id)) || null;
+  }
+  return convDict;
+}
+
 // ── GET /api/chats ─────────────────────────────────────────────────
 router.get('/chats', verifyToken, async (req, res) => {
   try {
@@ -28,8 +53,30 @@ router.get('/chats', verifyToken, async (req, res) => {
       .sort({ updated_at: -1 })
       .populate('members.user');
 
+    const convDicts = convs.map((c) => c.toDict(req.userId));
+
+    // Collect all member user_ids across all conversations
+    const allUserIds = [];
+    for (const c of convDicts) {
+      if (c.members) {
+        for (const m of c.members) {
+          if (m.user_id) allUserIds.push(m.user_id);
+        }
+      }
+    }
+
+    const avatarsMap = await getUserAvatarsMap(allUserIds);
+
+    for (const c of convDicts) {
+      if (c.members) {
+        for (const m of c.members) {
+          m.avatar_url = avatarsMap.get(String(m.user_id)) || null;
+        }
+      }
+    }
+
     return res.status(200).json({
-      conversations: convs.map((c) => c.toDict(req.userId)),
+      conversations: convDicts,
     });
   } catch (err) {
     console.error('[GET /chats] Error:', err.message);
@@ -151,6 +198,15 @@ router.get('/chats/:conv_id/messages', verifyToken, async (req, res) => {
 
     const msgsList = msgs.reverse().map((m) => m.toDict());
 
+    // Collect sender_id from each message
+    const senderIds = msgsList.map((m) => m.senderId || m.sender_id).filter(Boolean);
+    const avatarsMap = await getUserAvatarsMap(senderIds);
+
+    for (const m of msgsList) {
+      const sid = String(m.senderId || m.sender_id);
+      m.sender_avatar_url = avatarsMap.get(sid) || null;
+    }
+
     // Mark status as delivered
     await Message.updateMany(
       { conversation: conv._id, status: 'sent', sender: { $ne: user._id } },
@@ -208,6 +264,10 @@ router.post('/chats/:conv_id/messages', verifyToken, async (req, res) => {
     await msg.save();
     await msg.populate('sender');
 
+    const msgDict = msg.toDict();
+    const avatarsMap = await getUserAvatarsMap([msgDict.senderId]);
+    msgDict.sender_avatar_url = avatarsMap.get(String(msgDict.senderId)) || null;
+
     // Update conversation preview + unread count
     const previewText = content || '📷 Photo';
     conv.last_message = previewText.length > 120 ? previewText.slice(0, 120) + '…' : previewText;
@@ -226,7 +286,7 @@ router.post('/chats/:conv_id/messages', verifyToken, async (req, res) => {
     if (io) {
       io.to(conv_id).emit('new_message', {
         conversation_id: conv_id,
-        message: msg.toDict(),
+        message: msgDict,
       });
 
       for (const m of conv.members) {
@@ -237,7 +297,7 @@ router.post('/chats/:conv_id/messages', verifyToken, async (req, res) => {
       }
     }
 
-    return res.status(201).json({ message: msg.toDict() });
+    return res.status(201).json({ message: msgDict });
   } catch (err) {
     console.error('[POST /chats/:conv_id/messages] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
