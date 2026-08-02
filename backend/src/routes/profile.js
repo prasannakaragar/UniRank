@@ -376,7 +376,8 @@ async function handleUpdateProfile(req, res) {
       const stats = await syncLeetcodeStats(data.lc_username);
       if (stats) {
         profile.lc_rating = stats.lc_rating || 0;
-        profile.lc_max_rating = stats.lc_max_rating || 0;
+        // Track true historical max — only update if current rating is higher
+        profile.lc_max_rating = Math.max(profile.lc_max_rating || 0, stats.lc_rating || 0);
         profile.lc_rank = stats.lc_rank || 0;
         profile.lc_problems_solved = stats.lc_problems_solved || 0;
         profile.last_synced = new Date();
@@ -491,7 +492,8 @@ async function handleRefreshProfile(req, res) {
       const lcStats = await syncLeetcodeStats(profile.lc_username);
       if (lcStats) {
         profile.lc_rating = lcStats.lc_rating || 0;
-        profile.lc_max_rating = lcStats.lc_max_rating || 0;
+        // Track true historical max — only update if current rating is higher
+        profile.lc_max_rating = Math.max(profile.lc_max_rating || 0, lcStats.lc_rating || 0);
         profile.lc_rank = lcStats.lc_rank || 0;
         profile.lc_problems_solved = lcStats.lc_problems_solved || 0;
       }

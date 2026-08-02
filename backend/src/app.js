@@ -5,6 +5,7 @@
 
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -61,6 +62,10 @@ export function createApp() {
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
 
+  // Gzip / Brotli response compression (after CORS, before routes)
+  // Compresses JSON API responses by ~60-80%, significantly reducing transfer sizes.
+  app.use(compression());
+
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -79,8 +84,12 @@ export function createApp() {
   } catch (err) {
     console.warn('[APP] Could not create static uploads directory:', err.message);
   }
-  app.use('/api/static/uploads', express.static(uploadsPath));
-  app.use('/static/uploads', express.static(uploadsPath));
+  // Static upload options: 7-day browser cache; immutable is safe because
+  // Multer generates unique filenames (timestamps/UUIDs) on every upload.
+  const staticOpts = { maxAge: '7d', immutable: true };
+
+  app.use('/api/static/uploads', express.static(uploadsPath, staticOpts));
+  app.use('/static/uploads', express.static(uploadsPath, staticOpts));
 
   // Favicon handler to avoid 404 log spam on Vercel
   app.get(['/favicon.ico', '/favicon.png'], (_req, res) => res.status(204).end());

@@ -3,6 +3,43 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
 
+// ── Skeleton loader ───────────────────────────────────────────────────────────
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-10 animate-pulse">
+      {/* Greeting */}
+      <div className="space-y-2">
+        <div className="h-9 w-72 rounded-xl bg-gray-200" />
+        <div className="h-4 w-48 rounded-lg bg-gray-100" />
+      </div>
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="card min-h-[140px] flex flex-col gap-3">
+            <div className="h-3 w-24 rounded bg-gray-200" />
+            <div className="h-8 w-16 rounded-lg bg-gray-200" />
+            <div className="h-3 w-20 rounded bg-gray-100 mt-auto" />
+          </div>
+        ))}
+      </div>
+      {/* Content columns */}
+      <div className="grid lg:grid-cols-2 gap-10">
+        {[...Array(2)].map((_, i) => (
+          <div key={i} className="space-y-3">
+            <div className="h-5 w-40 rounded-lg bg-gray-200" />
+            {[...Array(3)].map((_, j) => (
+              <div key={j} className="card py-4 flex flex-col gap-2">
+                <div className="h-4 w-3/4 rounded bg-gray-200" />
+                <div className="h-3 w-1/2 rounded bg-gray-100" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function StatCard({ label, value, sub, accent, highlight }) {
   return (
     <div className={`card flex flex-col justify-between min-h-[140px] ${highlight ? 'card-accent-strip' : ''}`}>
@@ -17,20 +54,27 @@ function StatCard({ label, value, sub, accent, highlight }) {
 
 function StudentDashboard() {
   const { user } = useAuth()
-  const [profile, setProfile] = useState(null)
+  // NOTE: `user` already contains profile fields (cf_rating, cf_rank, cf_handle,
+  // github_score, etc.) fetched by AuthContext on mount — no extra /profile call needed.
   const [rank, setRank]       = useState(null)
   const [announcements, setAnnouncements] = useState([])
   const [teams, setTeams]     = useState([])
+  const [dataLoading, setDataLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/profile').then(r => setProfile(r.data)).catch(() => {})
-    api.get('/leaderboard').then(r => {
-      const entry = r.data.leaderboard.find(e => e.user_id === user?.id)
-      setRank(entry?.rank ?? null)
-    }).catch(() => {})
-    api.get('/announcements').then(r => setAnnouncements(r.data.announcements.slice(0, 3))).catch(() => {})
-    api.get('/teams').then(r => setTeams(r.data.teams.slice(0, 3))).catch(() => {})
+    if (!user) return
+    setDataLoading(true)
+    Promise.all([
+      api.get('/leaderboard').then(r => {
+        const entry = r.data.leaderboard.find(e => e.user_id === user?.id)
+        setRank(entry?.rank ?? null)
+      }).catch(() => {}),
+      api.get('/announcements').then(r => setAnnouncements(r.data.announcements.slice(0, 3))).catch(() => {}),
+      api.get('/teams').then(r => setTeams(r.data.teams.slice(0, 3))).catch(() => {}),
+    ]).finally(() => setDataLoading(false))
   }, [user])
+
+  if (dataLoading && !rank && !announcements.length) return <DashboardSkeleton />
 
   const rankColor = (r) => {
     if (!r) return 'text-text-secondary'
@@ -48,13 +92,13 @@ function StudentDashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard label="Codeforces Rating" value={profile?.cf_rating || 0} sub={profile?.cf_rank || 'unrated'} accent="text-primary" highlight />
-        <StatCard label="Problems Solved" value={profile?.cf_problems_solved || 0} sub="on Codeforces" />
+        <StatCard label="Codeforces Rating" value={user?.cf_rating || 0} sub={user?.cf_rank || 'unrated'} accent="text-primary" highlight />
+        <StatCard label="Problems Solved" value={user?.cf_problems_solved || 0} sub="on Codeforces" />
         <StatCard label="College Rank" value={rank ? `#${rank}` : '—'} sub="Global Leaderboard" accent={rankColor(rank)} highlight={rank === 1} />
-        <StatCard label="GitHub Score" value={profile?.github_score ? `${profile.github_score}/10` : '—'} sub="Project Analysis" />
+        <StatCard label="GitHub Score" value={user?.github_score ? `${user.github_score}/10` : '—'} sub="Project Analysis" />
       </div>
 
-      {!profile?.cf_handle && (
+      {!user?.cf_handle && (
         <div className="bg-accent-pill border border-primary/20 rounded-xl p-6 flex items-center justify-between">
           <div>
             <p className="font-bold text-text-primary text-lg">Connect Codeforces</p>

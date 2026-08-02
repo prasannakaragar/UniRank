@@ -163,8 +163,28 @@ export default function Leaderboard() {
 
       {/* Table */}
       {loading ? (
-        <div className="flex justify-center py-24">
-          <div className="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <div className="card overflow-hidden p-0">
+          {/* Header row shimmer */}
+          <div className="bg-gray-50/50 px-4 py-3 flex gap-4 border-b border-border-dim">
+            <div className="w-16 h-3 rounded bg-gray-200 animate-pulse" />
+            <div className="flex-1 h-3 rounded bg-gray-200 animate-pulse" />
+            <div className="w-20 h-3 rounded bg-gray-200 animate-pulse" />
+            <div className="w-16 h-3 rounded bg-gray-200 animate-pulse" />
+            <div className="w-16 h-3 rounded bg-gray-200 animate-pulse" />
+          </div>
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-4 border-b border-dashed border-border-dim animate-pulse">
+              <div className="w-7 h-7 rounded-full bg-gray-100 shrink-0" />
+              <div className="w-9 h-9 rounded-full bg-gray-100 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-40 rounded bg-gray-200" />
+                <div className="h-3 w-28 rounded bg-gray-100" />
+              </div>
+              <div className="w-16 h-4 rounded bg-gray-100" />
+              <div className="w-12 h-4 rounded bg-gray-100" />
+              <div className="w-14 h-5 rounded bg-gray-200" />
+            </div>
+          ))}
         </div>
       ) : data.length === 0 ? (
         <div className="card text-center py-24 text-text-secondary font-medium italic">

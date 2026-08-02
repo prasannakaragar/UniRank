@@ -1,16 +1,17 @@
 import axios from 'axios'
 
 const getApiBaseUrl = () => {
-  const envUrl = import.meta.env.VITE_API_URL;
-  if (!envUrl) {
-    return 'https://unirank-2.onrender.com/api';
-  }
-  return envUrl;
+  // VITE_API_URL is set per-environment:
+  //   .env.local       → /api   (Vite dev proxy → localhost:5001)
+  //   .env.production  → https://unirank-2.onrender.com/api
+  // Fallback to /api so local dev without any env file still works via proxy.
+  return import.meta.env.VITE_API_URL || '/api';
 };
 
 const api = axios.create({
   baseURL: getApiBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
+  timeout: 15000, // 15 s — prevents skeleton hanging forever on cold Render starts
 });
 
 // Attach JWT token to every request
