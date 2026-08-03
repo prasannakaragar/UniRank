@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
       .catch(() => {
         localStorage.removeItem('token')
         localStorage.removeItem('auth_user')
+        window.dispatchEvent(new Event('auth-logout'))
         setUser(null)
       })
       .finally(() => setLoading(false))
@@ -75,6 +76,8 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('auth_user')
+    window.dispatchEvent(new Event('auth-logout'))
+    window.dispatchEvent(new Event('auth-expired'))
     setUser(null)
   }
 

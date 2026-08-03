@@ -156,9 +156,102 @@ export default function Chats() {
   const inputRef   = useRef(null)
   const socketRef  = useRef(null)
 
-  /* ── socket setup ── */
+  // Track latest user and activeConv in refs to prevent closure staleness without re-subscribing socket
+  const userRef       = useRef(user)
+  const activeConvRef = useRef(activeConv)
+  const prevUserIdRef = useRef(user?.id)
+
+  useEffect(() => { userRef.current = user }, [user])
+  useEffect(() => { activeConvRef.current = activeConv }, [activeConv])
+
+  /* ── reset chat state completely ── */
+  const clearChatState = useCallback(() => {
+    setConversations([])
+    setActiveConv(null)
+    setMessages([])
+    setUnread(0)
+    setLoadingConvs(true)
+    setLoadingMsgs(false)
+    setSharedMedia([])
+    setOtherProfile(null)
+  }, [])
+
+  /* ── Req 1: Reset state immediately when user.id changes ── */
   useEffect(() => {
-    if (!user) return
+    if (prevUserIdRef.current !== user?.id) {
+      prevUserIdRef.current = user?.id
+      clearChatState()
+    }
+  }, [user?.id, clearChatState])
+
+  /* ── Req 6: Listen for global auth logout/expiration events for immediate state purge ── */
+  useEffect(() => {
+    const handleLogout = () => {
+      clearChatState()
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+    }
+    window.addEventListener('auth-logout', handleLogout)
+    window.addEventListener('auth-expired', handleLogout)
+    return () => {
+      window.removeEventListener('auth-logout', handleLogout)
+      window.removeEventListener('auth-expired', handleLogout)
+    }
+  }, [clearChatState])
+
+  /* ── load conversations with signal & user verification (Req 2, 3, 4) ── */
+  const loadConversations = useCallback((signal = null) => {
+    const reqUserId = user?.id
+    if (!reqUserId) return
+
+    setLoadingConvs(true)
+
+    api.get('/chats', { signal })
+      .then(r => {
+        // Req 4: Verify user hasn't changed before updating state
+        if (reqUserId !== userRef.current?.id) return
+        setConversations(r.data.conversations || [])
+      })
+      .catch(err => {
+        if (err?.name === 'CanceledError' || err?.name === 'AbortError' || api.isCancel?.(err)) return
+      })
+      .finally(() => {
+        if (reqUserId === userRef.current?.id) {
+          setLoadingConvs(false)
+        }
+      })
+
+    api.get('/chats/unread', { signal })
+      .then(r => {
+        if (reqUserId !== userRef.current?.id) return
+        setUnread(r.data.unread || 0)
+      })
+      .catch(err => {
+        if (err?.name === 'CanceledError' || err?.name === 'AbortError' || api.isCancel?.(err)) return
+      })
+  }, [user?.id])
+
+  /* ── Trigger fetch with AbortController cleanup (Req 2 & 3) ── */
+  useEffect(() => {
+    if (!user?.id) return
+    const controller = new AbortController()
+    loadConversations(controller.signal)
+    return () => {
+      controller.abort()
+    }
+  }, [user?.id, loadConversations])
+
+  /* ── Req 7: Socket setup & hygiene ── */
+  useEffect(() => {
+    if (!user?.id) {
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+      return
+    }
     
     // Connect to socket - strip /api suffix to get root server URL for Socket.IO
     const apiUrl = import.meta.env.VITE_API_URL || ''
@@ -168,25 +261,24 @@ export default function Chats() {
 
     socket.on('connect', () => {
       // Join personal room for unread updates and self-only deletions
-      socket.emit('join', { room: `user_${user.id}` })
+      if (userRef.current?.id) {
+        socket.emit('join', { room: `user_${userRef.current.id}` })
+      }
     })
 
     socket.on('new_message', (data) => {
-      // If message is for the active conversation, add to list
-      if (activeConv && data.conversation_id === activeConv.id) {
+      const currentActive = activeConvRef.current
+      if (currentActive && data.conversation_id === currentActive.id) {
         setMessages(prev => {
-            // Avoid duplicates
             if (prev.find(m => m.messageId === data.message.messageId)) return prev
             return [...prev, data.message]
         })
         api.post(`/chats/${data.conversation_id}/read`).catch(() => {})
       }
       
-      // Update conversation preview in the list
       setConversations(prev => {
         const idx = prev.findIndex(c => c.id === data.conversation_id)
         if (idx === -1) {
-            // Might be a new conversation started by someone else, reload
             loadConversations()
             return prev
         }
@@ -196,20 +288,15 @@ export default function Chats() {
           last_message: data.message.text,
           last_sender: data.message.senderName,
           updated_at: data.message.timestamp,
-          unread_count: (activeConv?.id === data.conversation_id) ? 0 : updated[idx].unread_count + 1
+          unread_count: (currentActive?.id === data.conversation_id) ? 0 : updated[idx].unread_count + 1
         }
-        // Move to top
         return [updated[idx], ...updated.filter((_, i) => i !== idx)]
       })
     })
 
     socket.on('message_deleted', (data) => {
       setMessages(prev => prev.filter(m => {
-        // If message is the one being deleted
         if (m.messageId === data.message_id) {
-          // If deleted for everyone, we remove it from UI (it's hard deleted in DB now)
-          if (data.mode === 'everyone') return false
-          // If deleted for me, we remove it from UI
           return false
         }
         return true
@@ -220,12 +307,15 @@ export default function Chats() {
         setConversations(prev => prev.map(c => 
             c.id === data.conversation_id ? { ...c, unread_count: data.unread_count } : c
         ))
-        // Update total unread
-        api.get('/chats/unread').then(r => setUnread(r.data.unread || 0)).catch(() => {})
+        if (userRef.current?.id) {
+          api.get('/chats/unread').then(r => {
+            if (userRef.current?.id) setUnread(r.data.unread || 0)
+          }).catch(() => {})
+        }
     })
 
     socket.on('messages_read', (data) => {
-        if (activeConv?.id === data.conversation_id) {
+        if (activeConvRef.current?.id === data.conversation_id) {
             setMessages(prev => prev.map(m => 
                 m.senderId !== data.user_id ? { ...m, status: 'seen' } : m
             ))
@@ -236,35 +326,26 @@ export default function Chats() {
         setConversations(prev => prev.map(c => 
             c.id === data.conversation_id ? { ...c, name: data.name, description: data.description } : c
         ))
-        if (activeConv?.id === data.conversation_id) {
+        if (activeConvRef.current?.id === data.conversation_id) {
             setActiveConv(prev => ({ ...prev, name: data.name, description: data.description }))
         }
     })
 
     return () => {
       socket.disconnect()
+      socketRef.current = null
     }
-  }, [user, activeConv?.id])
+  }, [user?.id, loadConversations])
 
   /* ── join/leave conversation rooms ── */
   useEffect(() => {
     if (!activeConv || !socketRef.current) return
-    socketRef.current.emit('join', { room: activeConv.id })
+    const convId = activeConv.id
+    socketRef.current.emit('join', { room: convId })
     return () => {
-        if (socketRef.current) socketRef.current.emit('leave', { room: activeConv.id })
+        if (socketRef.current) socketRef.current.emit('leave', { room: convId })
     }
   }, [activeConv?.id])
-
-  /* ── load conversations ── */
-  const loadConversations = useCallback(() => {
-    api.get('/chats')
-      .then(r => setConversations(r.data.conversations || []))
-      .catch(() => {})
-      .finally(() => setLoadingConvs(false))
-    api.get('/chats/unread').then(r => setUnread(r.data.unread || 0)).catch(() => {})
-  }, [])
-
-  useEffect(() => { loadConversations() }, [loadConversations])
 
   /* ── auto-open from ?dm=userId ── */
   useEffect(() => {
@@ -272,48 +353,90 @@ export default function Chats() {
     if (dmTarget) startDM(dmTarget)
   }, [searchParams])
 
-  /* ── load messages when conversation changes ── */
+  /* ── load messages when conversation changes (Req 2 & 4) ── */
   useEffect(() => {
-    if (!activeConv) return
+    if (!activeConv || !user?.id) return
+    const reqUserId = user?.id
+    const reqConvId = activeConv.id
+    const controller = new AbortController()
+
     setLoadingMsgs(true)
     setMessages([])
-    api.get(`/chats/${activeConv.id}/messages`)
-      .then(r => setMessages(r.data.messages || []))
-      .finally(() => setLoadingMsgs(false))
-    api.post(`/chats/${activeConv.id}/read`).catch(() => {})
-    // Mark conv as read locally
+
+    api.get(`/chats/${activeConv.id}/messages`, { signal: controller.signal })
+      .then(r => {
+        if (reqUserId !== userRef.current?.id || reqConvId !== activeConvRef.current?.id) return
+        setMessages(r.data.messages || [])
+      })
+      .catch(err => {
+        if (err?.name === 'CanceledError' || err?.name === 'AbortError' || api.isCancel?.(err)) return
+      })
+      .finally(() => {
+        if (reqUserId === userRef.current?.id && reqConvId === activeConvRef.current?.id) {
+          setLoadingMsgs(false)
+        }
+      })
+
+    api.post(`/chats/${activeConv.id}/read`, {}, { signal: controller.signal }).catch(() => {})
+
     setConversations(prev =>
       prev.map(c => c.id === activeConv.id ? { ...c, unread_count: 0 } : c)
     )
     setSelectionMode(false)
     setSelectedIds([])
-  }, [activeConv?.id])
+
+    return () => {
+      controller.abort()
+    }
+  }, [activeConv?.id, user?.id])
 
   /* ── scroll to bottom on new messages ── */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  /* ── info panel data ── */
+  /* ── info panel data (Req 2 & 4) ── */
   useEffect(() => {
-    if (!activeConv || !showInfoPanel) return
+    if (!activeConv || !showInfoPanel || !user?.id) return
+    const reqUserId = user?.id
+    const reqConvId = activeConv.id
+    const controller = new AbortController()
     
-    // Fetch media
     setLoadingMedia(true)
-    api.get(`/chats/${activeConv.id}/media`)
-      .then(r => setSharedMedia(r.data || []))
-      .finally(() => setLoadingMedia(false))
+    api.get(`/chats/${activeConv.id}/media`, { signal: controller.signal })
+      .then(r => {
+        if (reqUserId === userRef.current?.id && reqConvId === activeConvRef.current?.id) {
+          setSharedMedia(r.data || [])
+        }
+      })
+      .catch(err => {
+        if (err?.name === 'CanceledError' || err?.name === 'AbortError' || api.isCancel?.(err)) return
+      })
+      .finally(() => {
+        if (reqUserId === userRef.current?.id && reqConvId === activeConvRef.current?.id) {
+          setLoadingMedia(false)
+        }
+      })
     
-    // If DM, fetch the other user's profile info
     if (activeConv.kind === 'dm') {
       const other = activeConv.members?.find(m => m.user_id !== user?.id)
       if (other) {
-        api.get(`/profile/${other.user_id}`).then(r => setOtherProfile(r.data)).catch(() => {})
+        api.get(`/profile/${other.user_id}`, { signal: controller.signal })
+          .then(r => {
+            if (reqUserId === userRef.current?.id && reqConvId === activeConvRef.current?.id) {
+              setOtherProfile(r.data)
+            }
+          })
+          .catch(() => {})
       }
     } else {
       setOtherProfile(null)
     }
-  }, [activeConv?.id, showInfoPanel])
+
+    return () => {
+      controller.abort()
+    }
+  }, [activeConv?.id, showInfoPanel, user?.id])
 
   /* ── escape key to close overlays ── */
   useEffect(() => {

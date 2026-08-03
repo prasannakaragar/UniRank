@@ -91,6 +91,17 @@ export function createApp() {
   app.use('/api/static/uploads', express.static(uploadsPath, staticOpts));
   app.use('/static/uploads', express.static(uploadsPath, staticOpts));
 
+  // Prevent HTTP/browser caching of authenticated API responses
+  app.use('/api', (req, res, next) => {
+    if (req.path.startsWith('/static/uploads')) {
+      return next();
+    }
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    next();
+  });
+
   // Favicon handler to avoid 404 log spam on Vercel
   app.get(['/favicon.ico', '/favicon.png'], (_req, res) => res.status(204).end());
 
