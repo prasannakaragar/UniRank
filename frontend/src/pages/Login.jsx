@@ -64,7 +64,15 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="section-label block mb-2">Password</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="section-label block">Password</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs text-primary font-medium hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 className="input"
                 type="password"
@@ -74,6 +82,7 @@ export default function Login() {
                 required
               />
             </div>
+
 
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? 'Signing in…' : 'Sign In'}

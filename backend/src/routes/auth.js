@@ -1,9 +1,11 @@
 /**
  * routes/auth.js — UniRank
- * Production-grade authentication: registration, OTP verification, and login.
+ * Production-grade authentication: registration, OTP verification, login,
+ * and password-reset (forgot-password → verify-reset-otp → reset-password).
  */
 
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import {
   hashPassword,
   validatePasswordStrength,
@@ -16,7 +18,12 @@ import {
   sendOtpEmail,
 } from '../utils/email.js';
 import { createAccessToken } from '../middleware/auth.js';
-import { registerLimiter, resendOtpLimiter, loginLimiter } from '../middleware/rateLimiter.js';
+import {
+  registerLimiter,
+  resendOtpLimiter,
+  loginLimiter,
+  forgotPasswordLimiter,
+} from '../middleware/rateLimiter.js';
 import { getCurrentAcademicSession } from '../utils/academicYear.js';
 import { User, PendingUser, College, Profile } from '../models/index.js';
 
@@ -27,6 +34,7 @@ const OTP_EXPIRY_MINUTES = 5;
 const MAX_OTP_ATTEMPTS = 5;
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 15;
+const RESET_TOKEN_EXPIRY_MINUTES = 10;
 
 const KNOWN_COLLEGE_DOMAINS = new Set([
   'bmsit.in', 'bmsce.in', 'rvce.edu.in', 'msrit.edu', 'pes.edu',
@@ -34,6 +42,8 @@ const KNOWN_COLLEGE_DOMAINS = new Set([
   'nmit.ac.in', 'sit.ac.in', 'kletech.ac.in', 'manipal.edu', 'vit.ac.in',
   'srmist.edu.in', 'amrita.edu', 'bits-pilani.ac.in',
 ]);
+
+const JWT_SECRET = () => process.env.JWT_SECRET_KEY || 'jwt-secret-change-in-prod';
 
 // ── Internal helpers ────────────────────────────────────────────────
 
@@ -369,6 +379,175 @@ router.post('/login', loginLimiter, async (req, res) => {
   } catch (err) {
     console.error('[LOGIN] Error:', err.message || err);
     return res.status(500).json({ error: err.message || 'Internal server error.' });
+  }
+});
+
+// ── POST /api/forgot-password ──────────────────────────────────────
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
+  try {
+    const email = sanitizeEmail(req.body?.email || '');
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required.' });
+    }
+
+    // Always respond with the same message to prevent email enumeration
+    const genericResponse = {
+      message: 'If an account with that email exists, a password reset code has been sent.',
+      email_sent: true,
+    };
+
+    const user = await User.findOne({ email });
+    if (!user || !user.is_verified) {
+      // Do not reveal whether the email exists
+      console.log(`[FORGOT-PW] No verified account found for ${email} — silently ignoring`);
+      return res.status(200).json(genericResponse);
+    }
+
+    const otp = generateOtp();
+    const otpHash = hashOtp(otp);
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          reset_otp_hash: otpHash,
+          reset_otp_expiry: new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
+          reset_otp_attempts: 0,
+        },
+      }
+    );
+
+    const sent = await sendOtpEmail(email, otp);
+    if (!sent) {
+      console.error(`[FORGOT-PW] Failed to send reset OTP to ${email}`);
+      return res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+    }
+
+    console.log(`[FORGOT-PW] Reset OTP sent to ${email}`);
+    return res.status(200).json(genericResponse);
+  } catch (err) {
+    console.error('[FORGOT-PW] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ── POST /api/verify-reset-otp ─────────────────────────────────────
+router.post('/verify-reset-otp', async (req, res) => {
+  try {
+    const email = sanitizeEmail(req.body?.email || '');
+    const otp = String(req.body?.otp || '').trim();
+
+    if (!email || !otp) {
+      return res.status(400).json({ error: 'Email and OTP are required.' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user || !user.reset_otp_hash) {
+      return res.status(404).json({ error: 'No password reset request found. Please start again.' });
+    }
+
+    // Expiry check
+    if (!user.reset_otp_expiry || Date.now() > new Date(user.reset_otp_expiry).getTime()) {
+      await User.updateOne(
+        { _id: user._id },
+        { $unset: { reset_otp_hash: 1, reset_otp_expiry: 1, reset_otp_attempts: 1 } }
+      );
+      return res.status(410).json({ error: 'Reset code has expired. Please request a new one.' });
+    }
+
+    // Attempt limit
+    const attempts = user.reset_otp_attempts || 0;
+    if (attempts >= MAX_OTP_ATTEMPTS) {
+      await User.updateOne(
+        { _id: user._id },
+        { $unset: { reset_otp_hash: 1, reset_otp_expiry: 1, reset_otp_attempts: 1 } }
+      );
+      return res.status(429).json({ error: 'Too many failed attempts. Please request a new reset code.' });
+    }
+
+    // OTP verification
+    if (!verifyOtp(otp, user.reset_otp_hash)) {
+      const newAttempts = attempts + 1;
+      await User.updateOne({ _id: user._id }, { $set: { reset_otp_attempts: newAttempts } });
+      const remaining = MAX_OTP_ATTEMPTS - newAttempts;
+      return res.status(401).json({
+        error: 'Invalid reset code.',
+        attempts_remaining: remaining,
+      });
+    }
+
+    // OTP correct — issue a short-lived reset token and clear OTP fields
+    const resetToken = jwt.sign(
+      { sub: user._id.toString(), purpose: 'password_reset' },
+      JWT_SECRET(),
+      { expiresIn: `${RESET_TOKEN_EXPIRY_MINUTES}m` }
+    );
+
+    await User.updateOne(
+      { _id: user._id },
+      { $unset: { reset_otp_hash: 1, reset_otp_expiry: 1, reset_otp_attempts: 1 } }
+    );
+
+    console.log(`[VERIFY-RESET-OTP] Reset token issued for ${email}`);
+    return res.status(200).json({
+      message: 'OTP verified. You may now set a new password.',
+      reset_token: resetToken,
+    });
+  } catch (err) {
+    console.error('[VERIFY-RESET-OTP] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// ── POST /api/reset-password ───────────────────────────────────────
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { reset_token, new_password } = req.body || {};
+
+    if (!reset_token || !new_password) {
+      return res.status(400).json({ error: 'Reset token and new password are required.' });
+    }
+
+    // Verify the reset token
+    let decoded;
+    try {
+      decoded = jwt.verify(reset_token, JWT_SECRET());
+    } catch (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Reset token has expired. Please start over.' });
+      }
+      return res.status(401).json({ error: 'Invalid reset token.' });
+    }
+
+    if (decoded.purpose !== 'password_reset') {
+      return res.status(401).json({ error: 'Invalid reset token.' });
+    }
+
+    const userId = decoded.sub;
+
+    // Validate new password strength
+    const [ok, reason] = validatePasswordStrength(new_password);
+    if (!ok) return res.status(400).json({ error: reason });
+
+    // Hash and save the new password
+    const hashedPw = hashPassword(new_password);
+    const result = await User.updateOne(
+      { _id: userId },
+      {
+        $set: { password: hashedPw, failed_login_attempts: 0 },
+        $unset: { locked_until: 1 },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    console.log(`[RESET-PW] Password successfully reset for userId=${userId}`);
+    return res.status(200).json({ message: 'Password has been reset successfully. You can now log in.' });
+  } catch (err) {
+    console.error('[RESET-PW] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 });
 

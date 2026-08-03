@@ -4,9 +4,12 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 
 // ── Lazy-loaded page chunks (one bundle per route) ──────────────────
-const Login        = lazy(() => import('./pages/Login'))
-const Register     = lazy(() => import('./pages/Register'))
-const Dashboard    = lazy(() => import('./pages/Dashboard'))
+const Login          = lazy(() => import('./pages/Login'))
+const Register       = lazy(() => import('./pages/Register'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const ResetPassword  = lazy(() => import('./pages/ResetPassword'))
+const Dashboard      = lazy(() => import('./pages/Dashboard'))
+
 const Leaderboard  = lazy(() => import('./pages/Leaderboard'))
 const Announcements       = lazy(() => import('./pages/Announcements'))
 const AnnouncementDetail  = lazy(() => import('./pages/AnnouncementDetail'))
@@ -93,8 +96,11 @@ export default function App() {
       <Suspense fallback={<PageSkeleton />}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+          <Route path="/login"           element={<PublicRoute><Login /></PublicRoute>} />
+          <Route path="/register"        element={<PublicRoute><Register /></PublicRoute>} />
+          <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+          <Route path="/reset-password"  element={<PublicRoute><ResetPassword /></PublicRoute>} />
+
 
           <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route path="/dashboard"     element={<Dashboard />} />

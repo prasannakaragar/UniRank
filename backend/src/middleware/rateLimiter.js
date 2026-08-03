@@ -69,3 +69,10 @@ export const resendOtpLimiter = rateLimit({
   max: 3,
   message: { error: 'Too many OTP resend attempts. Please try again later.' },
 });
+
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 3,
+  message: { error: 'Too many password reset requests. Please try again later.' },
+});
+
