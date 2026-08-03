@@ -474,6 +474,22 @@ export default function AnnouncementDetail() {
                 : 'Register Now'}
             </button>
 
+            {/* Registration link — visible and copyable */}
+            {post.link && (
+              <div className="text-sm">
+                <p className="section-label mb-1">REGISTRATION LINK</p>
+                <a
+                  href={post.link}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="block truncate text-primary font-medium hover:underline break-all"
+                  title={post.link}
+                >
+                  {post.link}
+                </a>
+              </div>
+            )}
+
             {/* Admin delete */}
             {user?.role === 'admin' && (
               <button
