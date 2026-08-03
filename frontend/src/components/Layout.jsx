@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useEffect, useState } from 'react'
 import api from '../api/axios'
 import { io } from 'socket.io-client'
+import { resolveMediaUrl } from '../utils/media'
 
 function timeAgo(dateStr) {
   const now = new Date()
@@ -294,7 +295,7 @@ export default function Layout() {
                                 <p className="text-xs font-bold text-primary mt-1">{req.points_to_award} pts to award</p>
                                 {req.certificate_url && req.certificate_url !== 'no_certificate' && (
                                   <button
-                                    onClick={() => setPreviewImage(req.certificate_url.startsWith('/') ? (import.meta.env.VITE_API_URL?.replace('/api', '') || '') + req.certificate_url : req.certificate_url)}
+                                    onClick={() => setPreviewImage(resolveMediaUrl(req.certificate_url))}
                                     className="text-[11px] text-primary hover:underline mt-1 font-semibold"
                                   >
                                     📎 View Certificate

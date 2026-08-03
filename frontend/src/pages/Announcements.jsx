@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { resolveMediaUrl } from '../utils/media'
 
 const CATEGORIES = ['all', 'hackathon', 'contest', 'general']
 
@@ -101,7 +102,7 @@ function AnnouncementListCard({ post, currentUserId, userRole, onDelete }) {
       {post.banner_url && (
         <div className="w-full md:w-[140px] h-[140px] shrink-0 relative">
           <img
-            src={post.banner_url}
+            src={resolveMediaUrl(post.banner_url)}
             alt="logo"
             className="w-full h-full object-cover rounded-xl border border-border-dim"
             onError={e => { e.target.style.display = 'none' }}
@@ -163,7 +164,7 @@ function FileUploadInput({ label, value, onChange, placeholder, previewClass }) 
         {value && !uploading && (
           <div className="relative group w-fit">
             <img 
-              src={value} 
+              src={resolveMediaUrl(value)} 
               alt="preview" 
               className={`${previewClass} rounded-lg object-cover border border-border-dim`}
               onError={e => { e.target.style.display = 'none' }} 

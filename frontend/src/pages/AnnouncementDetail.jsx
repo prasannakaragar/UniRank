@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/axios'
+import { resolveMediaUrl } from '../utils/media'
 
 // ── Helpers ────────────────────────────────────────────────────────
 const safeFormatDate = (dateStr) => {
@@ -231,6 +232,8 @@ export default function AnnouncementDetail() {
         const p = r.data?.announcement
         setPost(p)
         setRegisteredCount(p?.registered_count || 0)
+        // Restore registered state if user already signed up (survives page refresh)
+        if (p?.is_user_registered) setRegistered(true)
         // Default to first available tab
         const firstTab = getAvailableTabs(p)[0]?.key || 'details'
         setActiveTab(firstTab)
@@ -324,7 +327,7 @@ export default function AnnouncementDetail() {
         {post.background_banner_url ? (
           <div className="w-full h-56 sm:h-72 rounded-2xl overflow-hidden relative">
             <img
-              src={post.background_banner_url}
+              src={resolveMediaUrl(post.background_banner_url)}
               alt="banner"
               className="w-full h-full object-cover"
               onError={(e) => { e.target.parentElement.style.background = 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}
@@ -344,7 +347,7 @@ export default function AnnouncementDetail() {
           {post.banner_url ? (
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-4 border-white shadow-card overflow-hidden bg-white shrink-0">
               <img
-                src={post.banner_url}
+                src={resolveMediaUrl(post.banner_url)}
                 alt="logo"
                 className="w-full h-full object-cover"
                 onError={(e) => { e.target.style.display = 'none' }}

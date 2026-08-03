@@ -36,7 +36,17 @@ router.get('/announcements/:id', verifyToken, async (req, res) => {
   try {
     const post = await Announcement.findById(req.params.id).populate('author');
     if (!post) return res.status(404).json({ error: 'Announcement not found' });
-    return res.status(200).json({ announcement: post.toDict() });
+
+    const isUserRegistered = post.registrations.some(
+      (r) => r.toString() === req.userId.toString()
+    );
+
+    return res.status(200).json({
+      announcement: {
+        ...post.toDict(),
+        is_user_registered: isUserRegistered,
+      },
+    });
   } catch (err) {
     console.error('[GET /announcements/:id] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
