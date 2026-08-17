@@ -350,40 +350,137 @@ router.put('/admin/student/:user_id', verifyToken, adminOnly, async (req, res) =
   }
 });
 
-// ── PUT /api/admin/student/:user_id/score ──────────────────────────
-router.put('/admin/student/:user_id/score', verifyToken, adminOnly, async (req, res) => {
+// ── PUT /api/admin/student/:user_id/scores ─────────────────────────
+// Admin contest rating overrides for Codeforces, LeetCode, CodeChef, HackerRank, HackerEarth
+router.put('/admin/student/:user_id/scores', verifyToken, adminOnly, async (req, res) => {
   try {
     const currentAdmin = await User.findById(req.userId);
     const { user_id } = req.params;
     const data = req.body || {};
-    const score = data.score;
+    const reason = data.reason || 'Admin contest rating modification';
 
-    if (score === undefined || score === null) {
-      return res.status(400).json({ error: 'Score is required' });
-    }
+    const targetUser = await User.findById(user_id);
+    if (!targetUser) return res.status(404).json({ error: 'Student not found' });
 
-    const profile = await Profile.findOne({ user: user_id });
+    const profile = await Profile.findOne({ user: user_id }).populate('user');
     if (!profile) return res.status(404).json({ error: 'Profile not found' });
 
-    profile.activity_score = parseInt(score, 10);
+    const { calculatePlatformRatings } = await import('../utils/scoring.js');
+    const oldRatings = calculatePlatformRatings(profile);
+
+    const platformFields = [
+      {
+        keys: ['admin_codeforces_rating', 'override_cf_score'],
+        field: 'admin_codeforces_rating',
+        platform: 'Codeforces',
+        actualKey: 'cf',
+      },
+      {
+        keys: ['admin_leetcode_rating', 'override_lc_score'],
+        field: 'admin_leetcode_rating',
+        platform: 'LeetCode',
+        actualKey: 'lc',
+      },
+      {
+        keys: ['admin_codechef_rating', 'override_cc_score'],
+        field: 'admin_codechef_rating',
+        platform: 'CodeChef',
+        actualKey: 'cc',
+      },
+      {
+        keys: ['admin_hackerrank_rating', 'override_hr_score'],
+        field: 'admin_hackerrank_rating',
+        platform: 'HackerRank',
+        actualKey: 'hr',
+      },
+      {
+        keys: ['admin_hackerearth_rating', 'override_he_score'],
+        field: 'admin_hackerearth_rating',
+        platform: 'HackerEarth',
+        actualKey: 'he',
+      },
+    ];
+
+    const changesLogged = [];
+
+    for (const pf of platformFields) {
+      let rawVal = undefined;
+      for (const k of pf.keys) {
+        if (k in data) {
+          rawVal = data[k];
+          break;
+        }
+      }
+
+      if (rawVal !== undefined) {
+        const newVal = (rawVal === '' || rawVal === null || rawVal === undefined) ? null : parseFloat(rawVal);
+        const oldVal = profile[pf.field];
+
+        if (oldVal !== newVal) {
+          profile[pf.field] = newVal;
+          // Sync legacy field as well
+          if (pf.field === 'admin_codeforces_rating') profile.override_cf_score = newVal;
+          if (pf.field === 'admin_leetcode_rating') profile.override_lc_score = newVal;
+          if (pf.field === 'admin_codechef_rating') profile.override_cc_score = newVal;
+          if (pf.field === 'admin_hackerrank_rating') profile.override_hr_score = newVal;
+          if (pf.field === 'admin_hackerearth_rating') profile.override_he_score = newVal;
+
+          const action = newVal !== null ? 'RATING_OVERRIDE' : 'CLEAR_OVERRIDE';
+          const prevVal = oldVal !== null && oldVal !== undefined ? oldVal : oldRatings.actual[pf.actualKey];
+
+          changesLogged.push({
+            platform: pf.platform,
+            action,
+            old: prevVal,
+            new: newVal,
+          });
+
+          await AdminLog.create({
+            admin_id: currentAdmin._id,
+            student_id: user_id,
+            target_user_id: user_id,
+            platform: pf.platform,
+            action,
+            previous_value: prevVal,
+            new_value: newVal,
+            reason,
+            details: `${action} on ${pf.platform} for ${targetUser.name}: ${prevVal} → ${newVal !== null ? newVal : 'AUTO (actual rating)'}`,
+          });
+        }
+      }
+    }
+
     await profile.save();
-
     await updateUserScores(user_id);
-    const updatedProfile = await Profile.findOne({ user: user_id });
 
-    await AdminLog.create({
-      admin_id: currentAdmin._id,
-      action: 'MODIFY_SCORE',
-      target_user_id: user_id,
-      details: `Modified score to ${score}`,
-    });
+    const updatedProfile = await Profile.findOne({ user: user_id }).populate('user');
+    const newRatings = calculatePlatformRatings(updatedProfile);
 
     return res.status(200).json({
-      message: 'Score updated successfully',
-      new_score: updatedProfile ? updatedProfile.global_score : 0,
+      message: 'Ratings updated & leaderboard recalculated',
+      student: updatedProfile.toDict(),
+      ratings: newRatings,
+      changes_count: changesLogged.length,
     });
   } catch (err) {
-    console.error('[PUT /admin/student/:user_id/score] Error:', err.message);
+    console.error('[PUT /admin/student/:user_id/scores] Error:', err.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /api/admin/student/:user_id/score-history ─────────────────
+router.get('/admin/student/:user_id/score-history', verifyToken, adminOnly, async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    const logs = await AdminLog.find({ target_user_id: user_id })
+      .sort({ timestamp: -1 })
+      .populate('admin_id');
+
+    return res.status(200).json({
+      logs: logs.map((l) => l.toDict()),
+    });
+  } catch (err) {
+    console.error('[GET /admin/student/:user_id/score-history] Error:', err.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

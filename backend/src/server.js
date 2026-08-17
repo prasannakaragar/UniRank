@@ -10,7 +10,6 @@ import mongoose from 'mongoose';
 import connectDB from './config/db.js';
 import { createApp } from './app.js';
 import { initSocket } from './socket.js';
-import { startCrawlerDaemon } from './utils/crawler.js';
 import { ensureCollegeIndexSeeded } from './scripts/seedCollegeIndex.js';
 
 dotenv.config();
@@ -53,8 +52,7 @@ async function startServer() {
     console.log(`  Healthcheck: http://0.0.0.0:${PORT}/api/health`);
     console.log(`==================================================`);
 
-    // Start background crawler daemon
-    startCrawlerDaemon();
+
   });
 
   // Graceful shutdown handler for nodemon (SIGUSR2) and process termination (SIGINT, SIGTERM)

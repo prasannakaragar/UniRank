@@ -11,6 +11,9 @@ import { User, Profile } from '../models/index.js';
 import { calculateAdmissionYear, getCurrentYearOfStudy } from '../utils/academicYear.js';
 import { syncUserStats } from '../utils/codeforces.js';
 import { syncLeetcodeStats } from '../utils/leetcode.js';
+import { syncCodechefStats } from '../utils/codechef.js';
+import { syncHackerrankStats } from '../utils/hackerrank.js';
+import { syncHackerearthStats } from '../utils/hackerearth.js';
 import { getGithubStats, calculateGithubScore } from '../utils/githubStats.js';
 import { analyzeGithubProfile } from '../utils/githubAi.js';
 import { updateUserScores } from '../utils/scoring.js';
@@ -354,35 +357,102 @@ async function handleUpdateProfile(req, res) {
       }
     }
 
-    const updatable = ['cf_handle', 'lc_username', 'bio', 'skills', 'github_url', 'linkedin_url'];
+    const ccHandle = data.codechef_username || data.cc_username;
+    if (ccHandle !== undefined) {
+      profile.cc_username = ccHandle;
+      profile.codechef_username = ccHandle;
+    }
+
+    const hrHandle = data.hackerrank_username || data.hr_username;
+    if (hrHandle !== undefined) {
+      profile.hr_username = hrHandle;
+      profile.hackerrank_username = hrHandle;
+    }
+
+    const heHandle = data.hackerearth_username || data.he_username;
+    if (heHandle !== undefined) {
+      profile.he_username = heHandle;
+      profile.hackerearth_username = heHandle;
+    }
+
+    const updatable = [
+      'cf_handle',
+      'lc_username',
+      'cc_username',
+      'codechef_username',
+      'hr_username',
+      'hackerrank_username',
+      'he_username',
+      'hackerearth_username',
+      'bio',
+      'skills',
+      'github_url',
+      'linkedin_url',
+    ];
     for (const field of updatable) {
       if (field in data) {
         profile[field] = data[field];
       }
     }
 
-    // Synchronous CF & LC sync (fast & low cost)
+    // Synchronous platform stat syncs (fast & non-blocking)
     if (data.cf_handle) {
       const stats = await syncUserStats(data.cf_handle);
-      profile.cf_rating = stats.cf_rating || 0;
-      profile.cf_max_rating = stats.cf_max_rating || 0;
-      profile.cf_rank = stats.cf_rank || 'unrated';
-      profile.cf_problems_solved = stats.cf_problems_solved || 0;
-      profile.avatar_url = stats.avatar_url;
-      profile.last_synced = new Date();
+      if (stats) {
+        profile.cf_rating = stats.cf_rating || 0;
+        profile.actual_codeforces_rating = stats.cf_rating || 0;
+        profile.cf_max_rating = stats.cf_max_rating || 0;
+        profile.cf_rank = stats.cf_rank || 'unrated';
+        profile.cf_problems_solved = stats.cf_problems_solved || 0;
+        if (stats.avatar_url) profile.avatar_url = stats.avatar_url;
+      }
     }
 
     if (data.lc_username) {
       const stats = await syncLeetcodeStats(data.lc_username);
-      if (stats) {
+      if (stats && Object.keys(stats).length > 0) {
         profile.lc_rating = stats.lc_rating || 0;
-        // Track true historical max — only update if current rating is higher
+        profile.actual_leetcode_rating = stats.lc_rating || 0;
         profile.lc_max_rating = Math.max(profile.lc_max_rating || 0, stats.lc_rating || 0);
         profile.lc_rank = stats.lc_rank || 0;
         profile.lc_problems_solved = stats.lc_problems_solved || 0;
-        profile.last_synced = new Date();
       }
     }
+
+    if (ccHandle) {
+      const stats = await syncCodechefStats(ccHandle);
+      if (stats && Object.keys(stats).length > 0) {
+        profile.cc_rating = stats.cc_rating || 0;
+        profile.actual_codechef_rating = stats.cc_rating || 0;
+        profile.cc_max_rating = Math.max(profile.cc_max_rating || 0, stats.cc_max_rating || 0);
+        profile.cc_stars = stats.cc_stars || '1★';
+        profile.cc_problems_solved = stats.cc_problems_solved || 0;
+        profile.cc_contests = stats.cc_contests || 0;
+      }
+    }
+
+    if (hrHandle) {
+      const stats = await syncHackerrankStats(hrHandle);
+      if (stats && Object.keys(stats).length > 0) {
+        profile.hr_badges = stats.hr_badges || 0;
+        profile.hr_score = stats.hr_score || 0;
+        profile.hr_rating = stats.hr_score || 0;
+        profile.actual_hackerrank_rating = stats.hr_score || 0;
+        profile.hr_problems_solved = stats.hr_problems_solved || 0;
+      }
+    }
+
+    if (heHandle) {
+      const stats = await syncHackerearthStats(heHandle);
+      if (stats && Object.keys(stats).length > 0) {
+        profile.he_rating = stats.he_rating || 0;
+        profile.actual_hackerearth_rating = stats.he_rating || 0;
+        profile.he_problems_solved = stats.he_problems_solved || 0;
+        profile.he_contests = stats.he_contests || 0;
+      }
+    }
+
+    profile.last_synced = new Date();
 
     let shouldTriggerScan = false;
     let ghUsername = null;
@@ -444,11 +514,14 @@ async function handleRefreshProfile(req, res) {
     const hasGithub = Boolean(username);
     const hasCF = Boolean(profile.cf_handle);
     const hasLC = Boolean(profile.lc_username);
+    const hasCC = Boolean(profile.cc_username);
+    const hasHR = Boolean(profile.hr_username);
+    const hasHE = Boolean(profile.he_username);
 
-    if (!hasGithub && !hasCF && !hasLC) {
+    if (!hasGithub && !hasCF && !hasLC && !hasCC && !hasHR && !hasHE) {
       return res.status(400).json({
         error:
-          'No profiles configured to sync. Add a Codeforces handle, LeetCode username, or GitHub URL first.',
+          'No profiles configured to sync. Add a Codeforces, LeetCode, CodeChef, HackerRank, HackerEarth handle, or GitHub URL first.',
       });
     }
 
@@ -476,26 +549,55 @@ async function handleRefreshProfile(req, res) {
       }
     }
 
-    // Synchronous Codeforces sync if configured
+    // Synchronous platform stat syncs if configured
     if (hasCF) {
       const cfStats = await syncUserStats(profile.cf_handle);
-      profile.cf_rating = cfStats.cf_rating || 0;
-      profile.cf_max_rating = cfStats.cf_max_rating || 0;
-      profile.cf_rank = cfStats.cf_rank || 'unrated';
-      profile.cf_problems_solved = cfStats.cf_problems_solved || 0;
-      profile.cf_contests = cfStats.cf_contests || 0;
-      if (cfStats.avatar_url) profile.avatar_url = cfStats.avatar_url;
+      if (cfStats) {
+        profile.cf_rating = cfStats.cf_rating || 0;
+        profile.cf_max_rating = cfStats.cf_max_rating || 0;
+        profile.cf_rank = cfStats.cf_rank || 'unrated';
+        profile.cf_problems_solved = cfStats.cf_problems_solved || 0;
+        profile.cf_contests = cfStats.cf_contests || 0;
+        if (cfStats.avatar_url) profile.avatar_url = cfStats.avatar_url;
+      }
     }
 
-    // Synchronous LeetCode sync if configured
     if (hasLC) {
       const lcStats = await syncLeetcodeStats(profile.lc_username);
-      if (lcStats) {
+      if (lcStats && Object.keys(lcStats).length > 0) {
         profile.lc_rating = lcStats.lc_rating || 0;
-        // Track true historical max — only update if current rating is higher
         profile.lc_max_rating = Math.max(profile.lc_max_rating || 0, lcStats.lc_rating || 0);
         profile.lc_rank = lcStats.lc_rank || 0;
         profile.lc_problems_solved = lcStats.lc_problems_solved || 0;
+      }
+    }
+
+    if (hasCC) {
+      const ccStats = await syncCodechefStats(profile.cc_username);
+      if (ccStats && Object.keys(ccStats).length > 0) {
+        profile.cc_rating = ccStats.cc_rating || 0;
+        profile.cc_max_rating = Math.max(profile.cc_max_rating || 0, ccStats.cc_max_rating || 0);
+        profile.cc_stars = ccStats.cc_stars || '1★';
+        profile.cc_problems_solved = ccStats.cc_problems_solved || 0;
+        profile.cc_contests = ccStats.cc_contests || 0;
+      }
+    }
+
+    if (hasHR) {
+      const hrStats = await syncHackerrankStats(profile.hr_username);
+      if (hrStats && Object.keys(hrStats).length > 0) {
+        profile.hr_badges = hrStats.hr_badges || 0;
+        profile.hr_score = hrStats.hr_score || 0;
+        profile.hr_problems_solved = hrStats.hr_problems_solved || 0;
+      }
+    }
+
+    if (hasHE) {
+      const heStats = await syncHackerearthStats(profile.he_username);
+      if (heStats && Object.keys(heStats).length > 0) {
+        profile.he_rating = heStats.he_rating || 0;
+        profile.he_problems_solved = heStats.he_problems_solved || 0;
+        profile.he_contests = heStats.he_contests || 0;
       }
     }
 
@@ -519,25 +621,16 @@ async function handleRefreshProfile(req, res) {
       synced: {
         codeforces: hasCF,
         leetcode: hasLC,
+        codechef: hasCC,
+        hackerrank: hasHR,
+        hackerearth: hasHE,
         github: hasGithub,
       },
     };
 
-    if (hasCF) {
-      response.cf_rating = profile.cf_rating;
-      response.cf_rank = profile.cf_rank;
-    }
-    if (hasLC) {
-      response.lc_rating = profile.lc_rating;
-      response.lc_problems_solved = profile.lc_problems_solved;
-    }
     if (hasGithub) {
       response.github_status = 'pending';
       response.can_refresh = false;
-      response.github_score = user.github_score;
-      response.implementation = user.github_implementation;
-      response.working = user.github_working;
-      response.impact = user.github_impact;
     } else {
       response.github_status = 'not_configured';
     }

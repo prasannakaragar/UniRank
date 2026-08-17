@@ -200,10 +200,12 @@ export default function Leaderboard() {
                   <th className="table-header">STUDENT</th>
                   {type === 'cp' ? (
                     <>
-                      <th className="table-header">PLATFORMS</th>
-                      <th className="table-header text-right">RATING</th>
-                      <th className="table-header text-right">SOLVED</th>
-                      <th className="table-header text-right text-primary">CP SCORE</th>
+                      <th className="table-header text-right">CF</th>
+                      <th className="table-header text-right">LC</th>
+                      <th className="table-header text-right">CC</th>
+                      <th className="table-header text-right">HR</th>
+                      <th className="table-header text-right">HE</th>
+                      <th className="table-header text-right text-primary">LEADERBOARD POINTS</th>
                     </>
                   ) : type === 'hackathon' ? (
                     <>
@@ -259,42 +261,23 @@ export default function Leaderboard() {
                       
                       {type === 'cp' && (
                         <>
-                          <td className="px-4 py-4">
-                            <div className="flex flex-col gap-1">
-                              {entry.cf_handle && (
-                                <a href={`https://codeforces.com/profile/${entry.cf_handle}`}
-                                   target="_blank" rel="noreferrer"
-                                   className="text-[12px] font-bold rank-link">
-                                  <span className="text-text-secondary font-medium">CF:</span> @{entry.cf_handle}
-                                </a>
-                              )}
-                              {entry.lc_username && (
-                                <a href={`https://leetcode.com/${entry.lc_username}`}
-                                   target="_blank" rel="noreferrer"
-                                   className="text-[12px] font-bold rank-link-amber">
-                                  <span className="text-text-secondary font-medium">LC:</span> @{entry.lc_username}
-                                </a>
-                              )}
-                            </div>
+                          <td className="px-4 py-4 text-right font-bold text-primary">
+                            {entry.cf_rating || 0}
                           </td>
-                          <td className="px-4 py-4 text-right">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[13px] font-bold text-primary">
-                                {entry.cf_rating || 0}
-                              </span>
-                              <span className="text-[13px] font-bold text-secondary">
-                                {entry.lc_rating || 0}
-                              </span>
-                            </div>
+                          <td className="px-4 py-4 text-right font-bold text-secondary">
+                            {entry.lc_rating || 0}
                           </td>
-                          <td className="px-4 py-4 text-right">
-                            <div className="flex flex-col gap-1">
-                              <span className="text-[12px] font-bold text-text-secondary">{entry.cf_problems_solved || 0}</span>
-                              <span className="text-[12px] font-bold text-secondary/60">{entry.lc_problems_solved || 0}</span>
-                            </div>
+                          <td className="px-4 py-4 text-right font-bold text-amber-600">
+                            {entry.cc_rating || 0}
+                          </td>
+                          <td className="px-4 py-4 text-right font-bold text-emerald-600">
+                            {entry.hr_rating || 0}
+                          </td>
+                          <td className="px-4 py-4 text-right font-bold text-blue-600">
+                            {entry.he_rating || 0}
                           </td>
                           <td className="px-4 py-4 text-right text-[15px] font-extrabold text-primary">
-                            {entry.cp_score}
+                            {(entry.leaderboard_points || entry.cp_score || 0).toFixed(2)}
                           </td>
                         </>
                       )}

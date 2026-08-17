@@ -238,31 +238,81 @@ function MentorDashboard() {
   )
 }
 
-// ─── Edit Student Modal ───────────────────────────────────────────────────────
+// ─── Edit Student & Admin Score Override Modal ───────────────────────────────────────
 function EditStudentModal({ student, onClose, onSave }) {
+  const [activeTab, setActiveTab] = useState('handles') // 'handles' | 'overrides' | 'history'
   const [form, setForm] = useState({
     cf_handle:   student.cf_handle   || '',
     lc_username: student.lc_username || '',
+    cc_username: student.cc_username || '',
+    hr_username: student.hr_username || '',
+    he_username: student.he_username || '',
     github_url:  student.github_url  || '',
   })
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
 
-  const handleSubmit = async (e) => {
+  // Overrides form state
+  const [overrides, setOverrides] = useState({
+    override_cf_score:     student.overrides?.override_cf_score ?? '',
+    override_lc_score:     student.overrides?.override_lc_score ?? '',
+    override_cc_score:     student.overrides?.override_cc_score ?? '',
+    override_hr_score:     student.overrides?.override_hr_score ?? '',
+    override_he_score:     student.overrides?.override_he_score ?? '',
+    override_cp_score:     student.overrides?.override_cp_score ?? '',
+    override_github_score: student.overrides?.override_github_score ?? '',
+    reason: '',
+  })
+
+  const [auditLogs, setAuditLogs] = useState([])
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      setLogsLoading(true)
+      api.get(`/admin/student/${student.id}/score-history`)
+        .then(r => setAuditLogs(r.data.logs || []))
+        .catch(() => {})
+        .finally(() => setLogsLoading(false))
+    }
+  }, [activeTab, student.id])
+
+  const handleSaveHandles = async (e) => {
     e.preventDefault()
     setSaving(true)
-    setError('')
+    setMsg(null)
     try {
-      const res = await api.put(`/admin/student/${student.id}`, form)
-      // Pass updated fields back to parent so list updates immediately
-      onSave(student.id, {
-        cf_handle:   form.cf_handle,
-        lc_username: form.lc_username,
-        github_url:  form.github_url,
-      })
-      onClose()
+      await api.put(`/admin/student/${student.id}`, form)
+      onSave(student.id, form)
+      setMsg({ type: 'ok', text: 'Platform handles updated successfully!' })
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save. Please try again.')
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to save handles.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveOverrides = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    setMsg(null)
+    try {
+      const payload = {
+        override_cf_score:     overrides.override_cf_score === '' ? null : parseFloat(overrides.override_cf_score),
+        override_lc_score:     overrides.override_lc_score === '' ? null : parseFloat(overrides.override_lc_score),
+        override_cc_score:     overrides.override_cc_score === '' ? null : parseFloat(overrides.override_cc_score),
+        override_hr_score:     overrides.override_hr_score === '' ? null : parseFloat(overrides.override_hr_score),
+        override_he_score:     overrides.override_he_score === '' ? null : parseFloat(overrides.override_he_score),
+        override_cp_score:     overrides.override_cp_score === '' ? null : parseFloat(overrides.override_cp_score),
+        override_github_score: overrides.override_github_score === '' ? null : parseFloat(overrides.override_github_score),
+        reason: overrides.reason || 'Admin manual score adjustment',
+      }
+
+      const res = await api.put(`/admin/student/${student.id}/scores`, payload)
+      onSave(student.id, { global_score: res.data.student.global_score })
+      setMsg({ type: 'ok', text: 'Score overrides saved & leaderboard re-indexed!' })
+    } catch (err) {
+      setMsg({ type: 'err', text: err.response?.data?.error || 'Failed to update score overrides.' })
     } finally {
       setSaving(false)
     }
@@ -270,62 +320,183 @@ function EditStudentModal({ student, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white border border-border-dim rounded-2xl w-full max-w-md shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white border border-border-dim rounded-2xl w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border-dim">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-dim bg-gray-50">
           <div>
-            <h2 className="text-lg font-bold text-text-primary">Edit Student Profile</h2>
-            <p className="text-xs text-text-secondary mt-0.5 font-medium">{student.name} · {student.email}</p>
+            <h2 className="text-lg font-bold text-text-primary">Student Score & Handle Management</h2>
+            <p className="text-xs text-text-secondary font-medium">{student.name} · {student.email}</p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-gray-100 text-text-secondary hover:bg-gray-200 flex items-center justify-center transition-colors font-bold">✕</button>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-gray-200 text-text-secondary hover:bg-gray-300 flex items-center justify-center transition-colors font-bold">✕</button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {error && (
-            <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-red-600 text-sm font-medium">{error}</div>
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-border-dim px-6 bg-white gap-6">
+          <button
+            onClick={() => setActiveTab('handles')}
+            className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'handles' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+          >
+            Platform Handles
+          </button>
+          <button
+            onClick={() => setActiveTab('overrides')}
+            className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'overrides' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+          >
+            Admin Score Overrides ⚙️
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'history' ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+          >
+            Audit Log History 📜
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {msg && (
+            <div className={`p-4 rounded-xl mb-6 text-sm font-bold ${msg.type === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+              {msg.text}
+            </div>
           )}
 
-          <div>
-            <label className="section-label block mb-2">Codeforces Handle</label>
-            <input
-              className="input font-mono"
-              placeholder="e.g. tourist"
-              value={form.cf_handle}
-              onChange={e => setForm(p => ({ ...p, cf_handle: e.target.value }))}
-            />
-          </div>
+          {activeTab === 'handles' && (
+            <form onSubmit={handleSaveHandles} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-1">Codeforces Handle</label>
+                  <input className="input font-mono" placeholder="e.g. tourist" value={form.cf_handle} onChange={e => setForm(p => ({ ...p, cf_handle: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-1">LeetCode Username</label>
+                  <input className="input font-mono" placeholder="e.g. leet_dev" value={form.lc_username} onChange={e => setForm(p => ({ ...p, lc_username: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-1">CodeChef Username</label>
+                  <input className="input font-mono" placeholder="e.g. chef_coder" value={form.cc_username} onChange={e => setForm(p => ({ ...p, cc_username: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-1">HackerRank Username</label>
+                  <input className="input font-mono" placeholder="e.g. rank_master" value={form.hr_username} onChange={e => setForm(p => ({ ...p, hr_username: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-text-secondary block mb-1">HackerEarth Username</label>
+                  <input className="input font-mono" placeholder="e.g. earth_hacker" value={form.he_username} onChange={e => setForm(p => ({ ...p, he_username: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-text-secondary block mb-1">GitHub Profile URL</label>
+                  <input className="input" type="url" placeholder="https://github.com/username" value={form.github_url} onChange={e => setForm(p => ({ ...p, github_url: e.target.value }))} />
+                </div>
+              </div>
 
-          <div>
-            <label className="section-label block mb-2">LeetCode Username</label>
-            <input
-              className="input font-mono"
-              placeholder="e.g. leet_dev"
-              value={form.lc_username}
-              onChange={e => setForm(p => ({ ...p, lc_username: e.target.value }))}
-            />
-          </div>
+              <div className="flex gap-3 pt-4 border-t border-border-dim">
+                <button type="submit" disabled={saving} className="btn-primary flex-1 py-3">
+                  {saving ? 'Saving…' : 'Save Handles'}
+                </button>
+                <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border-dim text-text-secondary font-bold hover:bg-gray-50">Cancel</button>
+              </div>
+            </form>
+          )}
 
-          <div>
-            <label className="section-label block mb-2">GitHub Profile URL</label>
-            <input
-              className="input"
-              type="url"
-              placeholder="https://github.com/username"
-              value={form.github_url}
-              onChange={e => setForm(p => ({ ...p, github_url: e.target.value }))}
-            />
-          </div>
+          {activeTab === 'overrides' && (
+            <form onSubmit={handleSaveOverrides} className="space-y-6">
+              <p className="text-xs text-text-secondary font-medium">
+                Admins can override the contest rating for each platform. Leave empty/clear to use the automatically fetched rating.
+              </p>
 
-          <div className="flex gap-3 pt-2">
-            <button type="submit" disabled={saving} className="btn-primary flex-1 py-3">
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
-            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border-dim text-text-secondary font-bold hover:bg-gray-50 transition-colors">
-              Cancel
-            </button>
-          </div>
-        </form>
+              <div className="space-y-4 border border-border-dim rounded-xl p-4 bg-gray-50/50">
+                {[
+                  { key: 'admin_codeforces_rating', name: 'Codeforces', actual: student.actual_codeforces_rating ?? student.cf_rating ?? 0 },
+                  { key: 'admin_leetcode_rating', name: 'LeetCode', actual: student.actual_leetcode_rating ?? student.lc_rating ?? 0 },
+                  { key: 'admin_codechef_rating', name: 'CodeChef', actual: student.actual_codechef_rating ?? student.cc_rating ?? 0 },
+                  { key: 'admin_hackerrank_rating', name: 'HackerRank', actual: student.actual_hackerrank_rating ?? student.hr_rating ?? student.hr_score ?? 0 },
+                  { key: 'admin_hackerearth_rating', name: 'HackerEarth', actual: student.actual_hackerearth_rating ?? student.he_rating ?? 0 },
+                ].map(item => {
+                  const val = overrides[item.key]
+                  const hasOverride = val !== '' && val !== null && val !== undefined
+                  return (
+                    <div key={item.key} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg bg-white border border-border-dim">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-text-primary">{item.name}</span>
+                          {hasOverride ? (
+                            <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-[10px]">⚠️ Admin Override Active</span>
+                          ) : (
+                            <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">🟢 Auto Fetched</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-text-secondary mt-0.5">Actual Contest Rating: <span className="font-bold text-text-primary">{item.actual}</span></p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <input
+                          type="number"
+                          step="1"
+                          placeholder={`Auto (${item.actual})`}
+                          className="input font-mono w-36 py-1.5 text-xs text-right"
+                          value={val}
+                          onChange={e => setOverrides(p => ({ ...p, [item.key]: e.target.value }))}
+                        />
+                        {hasOverride && (
+                          <button
+                            type="button"
+                            onClick={() => setOverrides(p => ({ ...p, [item.key]: '' }))}
+                            className="text-[11px] font-bold text-danger hover:underline px-2 py-1"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-text-secondary block mb-1">Reason for Override (Mandatory for Audit Trail)</label>
+                <input
+                  className="input"
+                  placeholder="e.g. Verified contest certificate or manual rating correction"
+                  value={overrides.reason}
+                  onChange={e => setOverrides(p => ({ ...p, reason: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-border-dim">
+                <button type="submit" disabled={saving} className="btn-primary flex-1 py-3">
+                  {saving ? 'Saving Ratings…' : 'Save & Recalculate Leaderboard'}
+                </button>
+                <button type="button" onClick={onClose} className="flex-1 py-3 rounded-xl border border-border-dim text-text-secondary font-bold hover:bg-gray-50">Cancel</button>
+              </div>
+            </form>
+          )}
+
+          {activeTab === 'history' && (
+            <div className="space-y-4">
+              {logsLoading ? (
+                <div className="py-10 text-center text-text-secondary italic">Loading audit log history…</div>
+              ) : auditLogs.length === 0 ? (
+                <div className="py-10 text-center text-text-secondary italic">No rating modifications recorded for this user.</div>
+              ) : (
+                <div className="space-y-3">
+                  {auditLogs.map(log => (
+                    <div key={log.id} className="p-4 rounded-xl border border-border-dim bg-gray-50/50 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-primary uppercase">{log.platform || log.score_type || 'SYSTEM'} · {log.action}</span>
+                        <span className="text-[11px] text-text-secondary font-medium">{new Date(log.timestamp).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm font-bold text-text-primary">
+                        Previous: <span className="font-mono text-text-secondary">{log.previous_value ?? 'N/A'}</span> → New: <span className="font-mono text-primary">{log.new_value ?? 'AUTO'}</span>
+                      </p>
+                      {log.reason && <p className="text-xs text-text-secondary italic">Reason: "{log.reason}"</p>}
+                      <p className="text-[11px] text-text-secondary font-semibold">By Admin: {log.admin}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

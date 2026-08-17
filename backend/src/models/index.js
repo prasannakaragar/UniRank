@@ -1,7 +1,6 @@
 export { default as College } from './College.js';
 export { default as CollegeIndex } from './CollegeIndex.js';
 export { default as Internship } from './Internship.js';
-export { default as CrawlerLog } from './CrawlerLog.js';
 export { default as ScrapeLog } from './ScrapeLog.js';
 export { default as PendingUser } from './PendingUser.js';
 export { default as User } from './User.js';

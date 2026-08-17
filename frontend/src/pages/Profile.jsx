@@ -85,7 +85,8 @@ export default function Profile() {
 
   // Profile form state
   const [form, setForm] = useState({
-    cf_handle: '', lc_username: '', bio: '', skills: '', github_url: '', linkedin_url: ''
+    cf_handle: '', lc_username: '', cc_username: '', hr_username: '', he_username: '',
+    bio: '', skills: '', github_url: '', linkedin_url: ''
   })
 
   // Hackathon form state
@@ -101,6 +102,9 @@ export default function Profile() {
       setForm({
         cf_handle: r.data.cf_handle || '',
         lc_username: r.data.lc_username || '',
+        cc_username: r.data.cc_username || '',
+        hr_username: r.data.hr_username || '',
+        he_username: r.data.he_username || '',
         bio: r.data.bio || '',
         skills: Array.isArray(r.data.skills) ? r.data.skills.join(', ') : (r.data.skills || ''),
         github_url: r.data.github_url || '',
@@ -387,6 +391,52 @@ export default function Profile() {
             </div>
           </div>
 
+          {/* 5-Platform CP Breakdown Card */}
+          <div className="card p-8 md:col-span-2">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="section-label">COMPETITIVE PROGRAMMING RATINGS</h3>
+                <p className="text-xs text-text-secondary font-medium mt-1">Formula: (CF/2) + (LC/2) + (CC/2) + (HR/3) + (HE/3)</p>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] font-black text-text-secondary uppercase tracking-widest block">LEADERBOARD POINTS</span>
+                <span className="text-3xl font-extrabold text-primary">{(profile.leaderboard_points || profile.cp_score || 0).toFixed(2)}</span>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+              <div className="p-4 rounded-xl bg-page/50 border border-border-dim text-center">
+                <p className="text-xs font-bold text-text-secondary">Codeforces</p>
+                <p className="text-lg font-black text-text-primary mt-1">{profile.final_codeforces_rating ?? profile.cf_rating ?? 0}</p>
+                <p className="text-[10px] text-text-secondary font-semibold mt-1">{profile.cf_handle ? `@${profile.cf_handle}` : 'Not connected'}</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-page/50 border border-border-dim text-center">
+                <p className="text-xs font-bold text-text-secondary">LeetCode</p>
+                <p className="text-lg font-black text-secondary mt-1">{profile.final_leetcode_rating ?? profile.lc_rating ?? 0}</p>
+                <p className="text-[10px] text-text-secondary font-semibold mt-1">{profile.lc_username ? `@${profile.lc_username}` : 'Not connected'}</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-page/50 border border-border-dim text-center">
+                <p className="text-xs font-bold text-text-secondary">CodeChef</p>
+                <p className="text-lg font-black text-amber-600 mt-1">{profile.final_codechef_rating ?? profile.cc_rating ?? 0}</p>
+                <p className="text-[10px] text-text-secondary font-semibold mt-1">{profile.cc_username || profile.codechef_username ? `@${profile.cc_username || profile.codechef_username}` : 'Not connected'}</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-page/50 border border-border-dim text-center">
+                <p className="text-xs font-bold text-text-secondary">HackerRank</p>
+                <p className="text-lg font-black text-emerald-600 mt-1">{profile.final_hackerrank_rating ?? profile.hr_rating ?? profile.hr_score ?? 0}</p>
+                <p className="text-[10px] text-text-secondary font-semibold mt-1">{profile.hr_username || profile.hackerrank_username ? `@${profile.hr_username || profile.hackerrank_username}` : 'Not connected'}</p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-page/50 border border-border-dim text-center col-span-2 sm:col-span-1">
+                <p className="text-xs font-bold text-text-secondary">HackerEarth</p>
+                <p className="text-lg font-black text-blue-600 mt-1">{profile.final_hackerearth_rating ?? profile.he_rating ?? 0}</p>
+                <p className="text-[10px] text-text-secondary font-semibold mt-1">{profile.he_username || profile.hackerearth_username ? `@${profile.he_username || profile.hackerearth_username}` : 'Not connected'}</p>
+              </div>
+            </div>
+          </div>
+
           {/* GitHub Score Card */}
           <div className="md:col-span-2">
             <GitHubScoreCard user={profile} />
@@ -448,6 +498,93 @@ export default function Profile() {
                 <div className="flex justify-between items-center py-4">
                   <span className="text-sm font-bold text-text-secondary">CONTEST RATING</span>
                   <span className="text-sm font-black text-secondary">{profile.lc_rating || 0}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-text-secondary text-sm font-medium italic py-10 text-center">No handle connected.</p>
+            )}
+          </div>
+
+          <div className="card p-8">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="section-label">CODECHEF</h3>
+              {profile.cc_username && (
+                <a href={`https://www.codechef.com/users/${profile.cc_username}`} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">
+                  @{profile.cc_username} ↗
+                </a>
+              )}
+            </div>
+            {profile.cc_username ? (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">CURRENT RATING</span>
+                  <span className="text-sm font-black text-amber-600">{profile.cc_rating || 0} ({profile.cc_stars || '1★'})</span>
+                </div>
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">PROBLEMS SOLVED</span>
+                  <span className="text-sm font-black text-text-primary">{profile.cc_problems_solved || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4">
+                  <span className="text-sm font-bold text-text-secondary">MAX RATING</span>
+                  <span className="text-sm font-black text-text-primary">{profile.cc_max_rating || 0}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-text-secondary text-sm font-medium italic py-10 text-center">No handle connected.</p>
+            )}
+          </div>
+
+          <div className="card p-8">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="section-label">HACKERRANK</h3>
+              {profile.hr_username && (
+                <a href={`https://www.hackerrank.com/profile/${profile.hr_username}`} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">
+                  @{profile.hr_username} ↗
+                </a>
+              )}
+            </div>
+            {profile.hr_username ? (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">HACKERRANK BADGES</span>
+                  <span className="text-sm font-black text-emerald-600">{profile.hr_badges || 0} Badges</span>
+                </div>
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">PROBLEMS SOLVED</span>
+                  <span className="text-sm font-black text-text-primary">{profile.hr_problems_solved || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4">
+                  <span className="text-sm font-bold text-text-secondary">TOTAL SCORE</span>
+                  <span className="text-sm font-black text-emerald-600">{profile.hr_score || 0}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-text-secondary text-sm font-medium italic py-10 text-center">No handle connected.</p>
+            )}
+          </div>
+
+          <div className="card p-8 md:col-span-2 sm:md:col-span-1">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="section-label">HACKEREARTH</h3>
+              {profile.he_username && (
+                <a href={`https://www.hackerearth.com/@${profile.he_username}`} target="_blank" rel="noreferrer" className="text-xs font-bold text-primary hover:underline">
+                  @{profile.he_username} ↗
+                </a>
+              )}
+            </div>
+            {profile.he_username ? (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">RATING</span>
+                  <span className="text-sm font-black text-blue-600">{profile.he_rating || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4 border-b border-dashed border-border-dim">
+                  <span className="text-sm font-bold text-text-secondary">PROBLEMS SOLVED</span>
+                  <span className="text-sm font-black text-text-primary">{profile.he_problems_solved || 0}</span>
+                </div>
+                <div className="flex justify-between items-center py-4">
+                  <span className="text-sm font-bold text-text-secondary">CONTESTS</span>
+                  <span className="text-sm font-black text-text-primary">{profile.he_contests || 0}</span>
                 </div>
               </div>
             ) : (
@@ -600,16 +737,34 @@ export default function Profile() {
         <div className="card p-10">
           <h2 className="text-2xl font-bold text-text-primary mb-10">Profile Settings</h2>
           <form onSubmit={handleSave} className="space-y-10">
-            <div className="grid sm:grid-cols-2 gap-8">
-              <div>
-                <label className="section-label block mb-2">Codeforces Handle</label>
-                <input className="input font-mono" placeholder="e.g. tourist" value={form.cf_handle}
-                  onChange={e => setForm(p => ({ ...p, cf_handle: e.target.value }))} />
-              </div>
-              <div>
-                <label className="section-label block mb-2">LeetCode Username</label>
-                <input className="input font-mono" placeholder="e.g. leet_dev" value={form.lc_username}
-                  onChange={e => setForm(p => ({ ...p, lc_username: e.target.value }))} />
+            <div className="space-y-6">
+              <h3 className="section-label">COMPETITIVE PROGRAMMING PLATFORMS</h3>
+              <div className="grid sm:grid-cols-2 gap-6">
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-2">Codeforces Handle</label>
+                  <input className="input font-mono" placeholder="e.g. tourist" value={form.cf_handle}
+                    onChange={e => setForm(p => ({ ...p, cf_handle: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-2">LeetCode Username</label>
+                  <input className="input font-mono" placeholder="e.g. leet_dev" value={form.lc_username}
+                    onChange={e => setForm(p => ({ ...p, lc_username: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-2">CodeChef Username</label>
+                  <input className="input font-mono" placeholder="e.g. chef_coder" value={form.cc_username}
+                    onChange={e => setForm(p => ({ ...p, cc_username: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-text-secondary block mb-2">HackerRank Username</label>
+                  <input className="input font-mono" placeholder="e.g. rank_master" value={form.hr_username}
+                    onChange={e => setForm(p => ({ ...p, hr_username: e.target.value }))} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xs font-bold text-text-secondary block mb-2">HackerEarth Username</label>
+                  <input className="input font-mono" placeholder="e.g. earth_hacker" value={form.he_username}
+                    onChange={e => setForm(p => ({ ...p, he_username: e.target.value }))} />
+                </div>
               </div>
             </div>
             

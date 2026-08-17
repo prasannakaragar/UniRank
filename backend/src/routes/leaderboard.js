@@ -183,15 +183,35 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
         };
 
         if (lbType === 'cp') {
+          const dict = p.toDict();
           Object.assign(entry, {
             cf_handle: p.cf_handle || null,
-            cf_rating: p.cf_rating || 0,
-            cf_rank: p.cf_rank || 'unrated',
-            cf_problems_solved: p.cf_problems_solved || 0,
+            cf_rating: dict.final_codeforces_rating,
+            actual_cf_rating: dict.actual_codeforces_rating,
+            admin_cf_rating: dict.admin_codeforces_rating,
+
             lc_username: p.lc_username || null,
-            lc_rating: p.lc_rating || 0,
-            lc_problems_solved: p.lc_problems_solved || 0,
-            cp_score: Math.round(p.cp_score * 10) / 10,
+            lc_rating: dict.final_leetcode_rating,
+            actual_lc_rating: dict.actual_leetcode_rating,
+            admin_lc_rating: dict.admin_leetcode_rating,
+
+            cc_username: dict.codechef_username || null,
+            cc_rating: dict.final_codechef_rating,
+            actual_cc_rating: dict.actual_codechef_rating,
+            admin_cc_rating: dict.admin_codechef_rating,
+
+            hr_username: dict.hackerrank_username || null,
+            hr_rating: dict.final_hackerrank_rating,
+            actual_hr_rating: dict.actual_hackerrank_rating,
+            admin_hr_rating: dict.admin_hackerrank_rating,
+
+            he_username: dict.hackerearth_username || null,
+            he_rating: dict.final_hackerearth_rating,
+            actual_he_rating: dict.actual_hackerearth_rating,
+            admin_he_rating: dict.admin_hackerearth_rating,
+
+            leaderboard_points: Math.round(p.cp_score * 100) / 100,
+            cp_score: Math.round(p.cp_score * 100) / 100,
           });
         } else if (lbType === 'hackathon') {
           const hCount = await HackathonResult.countDocuments({ user: u._id });
