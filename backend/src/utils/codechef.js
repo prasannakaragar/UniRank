@@ -63,9 +63,12 @@ export async function getCodechefStats(username) {
 
     const starsText = $('.rating-star').text().trim() || `${getStarsFromRating(currentRating)}★`;
 
-    const problemsText = $('.problems-solved h5').text() || '';
-    const problemsMatch = problemsText.match(/\d+/);
-    const problemsSolved = problemsMatch ? parseInt(problemsMatch[0], 10) : 0;
+    const problemsBlock = $('.problems-solved').text() || $('body').text();
+    const problemsMatch =
+      problemsBlock.match(/Total\s+Problems?\s+Solved\s*:\s*(\d+)/i) ||
+      problemsBlock.match(/Total\s+Solved\s*:\s*(\d+)/i) ||
+      problemsBlock.match(/Fully\s+Solved\s*\(\s*(\d+)\s*\)/i);
+    const problemsSolved = problemsMatch ? parseInt(problemsMatch[1], 10) : 0;
 
     return {
       cc_rating: currentRating,
