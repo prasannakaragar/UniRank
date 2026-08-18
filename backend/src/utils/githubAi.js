@@ -107,7 +107,7 @@ You MUST return ONLY a raw JSON object with the following exact keys and format.
 }
 `;
 
-    const model = ai.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = ai.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const result = await model.generateContent(prompt);
     let textResponse = result.response.text().trim();
 

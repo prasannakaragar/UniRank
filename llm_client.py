@@ -40,7 +40,7 @@ class LLMClient(ABC):
 class GeminiClient(LLMClient):
     """Google Gemini LLM client with exponential backoff retry for rate/quota limits."""
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.6-flash"):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY environment variable is required for GeminiClient.")

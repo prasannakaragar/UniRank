@@ -51,8 +51,8 @@ router.get('/leaderboard', verifyToken, async (req, res) => {
     const branch = req.query.branch;
     const year = req.query.year;
 
-    // Filter by role="student"
-    const userQueryFilter = { role: 'student' };
+    // Filter by allowed active roles (students, admins, mentors, etc.)
+    const userQueryFilter = { role: { $in: ['student', 'admin', 'superadmin', 'mentor', 'reviewer'] } };
 
     if (scope === 'college' && currentUser) {
       try {
