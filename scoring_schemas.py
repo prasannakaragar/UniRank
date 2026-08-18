@@ -83,7 +83,7 @@ class FinalEvidenceBlock(BaseModel):
 
 class FinalScoreOutput(BaseModel):
     implementation_score: float = Field(ge=0.0, le=10.0)
-    impact_score: int = Field(ge=0, le=100)
+    impact_score: float = Field(ge=0.0, le=100.0)
     working_score: float = Field(ge=0.0, le=10.0)
     evidence: Dict[str, Any]
     computed_at: str
