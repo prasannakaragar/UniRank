@@ -26,7 +26,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/unirank';
 
 async function main() {
   console.log('╔════════════════════════════════════════════════════╗');
-  console.log('║  UniRank — Phase 0 Data Cleanup                   ║');
+  console.log('║  UniRank — Phase 0 Data Cleanup                    ║');
   console.log('╚════════════════════════════════════════════════════╝');
   console.log();
 

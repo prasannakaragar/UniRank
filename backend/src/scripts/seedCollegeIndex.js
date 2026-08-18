@@ -3,9 +3,9 @@ import connectDB from '../config/db.js';
 import CollegeIndex from '../models/CollegeIndex.js';
 
 export const INITIAL_COLLEGE_INDEX = [
-  { name: 'Indian Institute of Technology Bombay (IIT Bombay)', domain: 'iitb.ac.in', location: 'Mumbai, Maharashtra', logo_url: '' },
-  { name: 'Indian Institute of Technology Delhi (IIT Delhi)', domain: 'iitd.ac.in', location: 'New Delhi, Delhi', logo_url: '' },
-  { name: 'Indian Institute of Technology Madras (IIT Madras)', domain: 'iitm.ac.in', location: 'Chennai, Tamil Nadu', logo_url: '' },
+  { name: 'Indian Institute of Technology Bombay (IIT Bombay)', domain: 'iitb.ac.in', location: 'Mumbai, Maharashtra', logo_url: 'https://www.collegebatch.com/1-indian-institute-of-technology-campus-tour-mumbai' },
+  { name: 'Indian Institute of Technology Delhi (IIT Delhi)', domain: 'iitd.ac.in', location: 'New Delhi, Delhi', logo_url: 'https://wallpaperaccess.com/iit-delhi' },
+  { name: 'Indian Institute of Technology Madras (IIT Madras)', domain: 'iitm.ac.in', location: 'Chennai, Tamil Nadu', logo_url: 'https://wallpaperaccess.com/iit-madras' },
   { name: 'Indian Institute of Technology Kharagpur (IIT KGP)', domain: 'iitkgp.ac.in', location: 'Kharagpur, West Bengal', logo_url: '' },
   { name: 'Indian Institute of Technology Kanpur (IIT Kanpur)', domain: 'iitk.ac.in', location: 'Kanpur, Uttar Pradesh', logo_url: '' },
   { name: 'Indian Institute of Technology Roorkee (IIT Roorkee)', domain: 'iitr.ac.in', location: 'Roorkee, Uttarakhand', logo_url: '' },
