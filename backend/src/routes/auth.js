@@ -43,6 +43,16 @@ const KNOWN_COLLEGE_DOMAINS = new Set([
   'srmist.edu.in', 'amrita.edu', 'bits-pilani.ac.in',
 ]);
 
+const BLOCKED_DOMAINS = new Set([
+  'imail.edu.vn',
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+  'tempmail.com', 'guerrillamail.com', '10minutemail.com', 'mailinator.com',
+]);
+
+const BLOCKED_EMAILS = new Set([
+  'sanjay@imail.edu.vn',
+]);
+
 const JWT_SECRET = () => process.env.JWT_SECRET_KEY || 'jwt-secret-change-in-prod';
 
 // ── Internal helpers ────────────────────────────────────────────────
@@ -53,11 +63,23 @@ function getClientIp(req) {
   return req.ip || 'unknown';
 }
 
+function sanitizeEmail(raw) {
+  return (raw || '').trim().toLowerCase();
+}
+
+function isBlocked(email) {
+  if (!email) return false;
+  const cleanEmail = sanitizeEmail(email);
+  const domain = cleanEmail.split('@').pop().toLowerCase();
+  return BLOCKED_EMAILS.has(cleanEmail) || BLOCKED_DOMAINS.has(domain);
+}
+
 async function isCollegeEmail(email) {
-  const domain = email.split('@').pop().toLowerCase();
-  if (domain === 'gmail.com' || domain === 'yahoo.com' || domain === 'hotmail.com' || domain === 'outlook.com') {
+  const cleanEmail = sanitizeEmail(email);
+  if (isBlocked(cleanEmail)) {
     return false;
   }
+  const domain = cleanEmail.split('@').pop().toLowerCase();
   if (domain.includes('iit') || domain.includes('nit')) return true;
   if (domain.includes('.edu') || domain.includes('.ac.in')) return true;
   if (KNOWN_COLLEGE_DOMAINS.has(domain)) return true;
@@ -66,7 +88,9 @@ async function isCollegeEmail(email) {
 }
 
 async function ensureCollegeExists(email) {
-  const domain = email.split('@').pop().toLowerCase();
+  const cleanEmail = sanitizeEmail(email);
+  if (isBlocked(cleanEmail)) return null;
+  const domain = cleanEmail.split('@').pop().toLowerCase();
   const college = await College.findOne({ domain });
   if (college) return college.name;
 
@@ -74,10 +98,6 @@ async function ensureCollegeExists(email) {
   await College.create({ name, domain });
   console.log(`[AutoRegister] New college domain registered: ${name} (${domain})`);
   return name;
-}
-
-function sanitizeEmail(raw) {
-  return (raw || '').trim().toLowerCase();
 }
 
 // ── POST /api/register ─────────────────────────────────────────────
@@ -104,9 +124,9 @@ router.post('/register', registerLimiter, async (req, res) => {
 
     const email = sanitizeEmail(data.email);
 
-    if (!(await isCollegeEmail(email))) {
+    if (isBlocked(email) || !(await isCollegeEmail(email))) {
       return res.status(403).json({
-        error: 'Registration is restricted to college email addresses.',
+        error: 'Registration is restricted to authorized college email addresses.',
       });
     }
 
@@ -171,6 +191,10 @@ router.post('/resend-otp', resendOtpLimiter, async (req, res) => {
     const email = sanitizeEmail(data.email || '');
     if (!email) return res.status(400).json({ error: 'Email is required.' });
 
+    if (isBlocked(email)) {
+      return res.status(403).json({ error: 'This email address or domain has been blocked.' });
+    }
+
     const pending = await PendingUser.findOne({ email });
     if (!pending) {
       return res.status(404).json({ error: 'No pending registration found for this email.' });
@@ -207,6 +231,10 @@ router.post('/verify-otp', async (req, res) => {
 
     if (!email || !otp) {
       return res.status(400).json({ error: 'Email and verification code are required.' });
+    }
+
+    if (isBlocked(email)) {
+      return res.status(403).json({ error: 'This email address or domain has been blocked.' });
     }
 
     const pending = await PendingUser.findOne({ email });
@@ -281,6 +309,10 @@ router.post('/login', loginLimiter, async (req, res) => {
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    if (isBlocked(email)) {
+      return res.status(403).json({ error: 'This account or domain has been blocked.' });
     }
 
     const user = await User.findOne({ email });
@@ -388,6 +420,10 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
     const email = sanitizeEmail(req.body?.email || '');
     if (!email) {
       return res.status(400).json({ error: 'Email is required.' });
+    }
+
+    if (isBlocked(email)) {
+      return res.status(403).json({ error: 'This email address or domain has been blocked.' });
     }
 
     // Always respond with the same message to prevent email enumeration
