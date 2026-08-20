@@ -160,15 +160,10 @@ export default function Profile() {
     setSyncing(true); setMsg(null)
     try {
       const endpoint = id ? `/profile/refresh/${id}` : '/profile/sync'
-      const res = await api.post(endpoint)
+      await api.post(endpoint)
 
-      setProfile(prev => ({
-        ...prev,
-        github_score: res.data.github_score,
-        github_implementation: res.data.implementation,
-        github_working: res.data.working,
-        github_impact: res.data.impact
-      }))
+      // Re-fetch full profile to get all updated scores (including GitHub from background scan)
+      await fetchProfile()
 
       if (isOwnProfile) {
         await refreshUser()
